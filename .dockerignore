@@ -1,0 +1,6 @@
+# Images need only app/ (code + requirements); tests and local env files stay out.
+*
+!app/
+app/tests/
+app/.env*
+**/__pycache__

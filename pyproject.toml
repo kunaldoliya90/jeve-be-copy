@@ -1,0 +1,74 @@
+[project]
+name = "jeve-be"
+version = "0.1.0"
+description = "JEVE (Journal Entry Validation & Evidence) backend service."
+requires-python = ">=3.13,<3.14"
+
+# Dependencies live in app/requirements/*.txt. uv only creates .venv and runs tools in it.
+[tool.uv]
+managed = false
+
+# --- Ruff -----------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+src = ["app"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",  # pycodestyle
+    "F",       # pyflakes
+    "I",       # isort
+    "B",       # bugbear
+    "UP",      # pyupgrade
+    "N",       # pep8-naming
+    "S",       # bandit (security)
+    "BLE",     # blind except
+    "C4",      # comprehensions
+    "SIM",     # simplify
+    "PT",      # pytest style
+    "PTH",     # prefer pathlib
+    "T20",     # no print()
+    "TID",     # tidy imports
+    "ASYNC",   # async pitfalls
+    "FAST",    # FastAPI conventions
+    "RUF",     # ruff-specific
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use assert and fake credentials by design.
+"app/tests/**" = ["S101", "S105", "S106"]
+# Derived settings are uppercase properties, like the fields they come from.
+"app/core/settings/base.py" = ["N802"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+# --- mypy -----------------------------------------------------------------------------
+
+[tool.mypy]
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["app"]
+mypy_path = "app"
+# Code under app/ is imported top-level (`from core.settings import config`), so the
+# app/ folder itself must not be treated as a namespace package.
+namespace_packages = false
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+warn_required_dynamic_aliases = true
+
+# --- pytest ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["app/tests"]
+pythonpath = ["app"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+filterwarnings = [
+    "error",
+    # Starlette >= 1.8 prefers the `httpx2` fork for TestClient; `httpx` remains supported.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+]
+xfail_strict = true

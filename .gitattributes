@@ -1,0 +1,3 @@
+# Normalise to LF so Dockerfiles, the Makefile and shell snippets behave the same in Linux
+# containers and CI when the repository is checked out on Windows.
+* text=auto eol=lf
