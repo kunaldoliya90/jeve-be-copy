@@ -1,7 +1,9 @@
-"""Constants and enums used by the settings classes."""
+"""Constants, enums and dict-setting keys used by the settings classes."""
 
 from enum import StrEnum
-from typing import Final
+from typing import Final, TypedDict
+
+from pydantic import SecretStr
 
 
 class Flavour(StrEnum):
@@ -18,6 +20,18 @@ class LogLevel(StrEnum):
     WARNING = "WARNING"
     INFO = "INFO"
     DEBUG = "DEBUG"
+
+
+class OpenAISettings(TypedDict):
+    """Keys of each flavour's ``OPENAI_SETTINGS``.
+
+    ``API_KEY`` is a secret: leave it ``None`` in code and set the whole dict in the
+    environment as JSON, ``APP_OPENAI_SETTINGS='{"BASE_URL": ..., "API_KEY": ..., ...}'``.
+    """
+
+    BASE_URL: str
+    API_KEY: SecretStr | None
+    TIMEOUT_SECONDS: float
 
 
 FLAVOUR_ENV_VAR: Final = "FLAVOUR"

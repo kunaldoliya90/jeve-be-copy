@@ -40,6 +40,8 @@ select = [
 "app/tests/**" = ["S101", "S105", "S106"]
 # Derived settings are uppercase properties, like the fields they come from.
 "app/core/settings/base.py" = ["N802"]
+# Dict settings (OPENAI_SETTINGS...) are pydantic fields: each instance gets its own copy.
+"app/core/settings/{development,staging,production}.py" = ["RUF012"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"

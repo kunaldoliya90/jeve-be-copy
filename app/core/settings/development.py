@@ -5,7 +5,7 @@ from typing import ClassVar
 from pydantic_settings import SettingsConfigDict
 
 from core.settings.base import BaseConfig
-from core.settings.consts import DOTENV_ENCODING, DOTENV_FILE, Flavour, LogLevel
+from core.settings.consts import DOTENV_ENCODING, DOTENV_FILE, Flavour, LogLevel, OpenAISettings
 
 
 class DevelopmentConfig(BaseConfig):
@@ -20,3 +20,9 @@ class DevelopmentConfig(BaseConfig):
     DOCS_URL: str | None = "/docs"
     REDOC_URL: str | None = "/redoc"
     OPENAPI_URL: str | None = "/openapi.json"
+
+    OPENAI_SETTINGS: OpenAISettings = {
+        "BASE_URL": "https://openai-compliance-tool.services.ai.azure.com/openai/v1",
+        "API_KEY": None,
+        "TIMEOUT_SECONDS": 300,
+    }

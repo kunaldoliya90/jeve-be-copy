@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from core.settings import AppConfig
 from core.settings.base import BaseConfig
 from core.settings.development import DevelopmentConfig
 from core.settings.production import ProductionConfig
@@ -92,6 +93,24 @@ def test_config_logging_config_uses_log_level() -> None:
     logging_config = StagingConfig(LOG_LEVEL="ERROR").LOGGING_CONFIG
 
     assert logging_config["root"]["level"] == "ERROR"
+
+
+@pytest.mark.parametrize("config_class", [DevelopmentConfig, StagingConfig, ProductionConfig])
+def test_config_openai_settings_are_read_from_env_json(
+    monkeypatch: pytest.MonkeyPatch, config_class: type[AppConfig]
+) -> None:
+    monkeypatch.setenv(
+        "APP_OPENAI_SETTINGS",
+        '{"BASE_URL": "https://example.test/v1", "API_KEY": "sk-test", "TIMEOUT_SECONDS": "30"}',
+    )
+
+    config = config_class()
+
+    api_key = config.OPENAI_SETTINGS["API_KEY"]
+    assert api_key is not None
+    assert api_key.get_secret_value() == "sk-test"
+    assert config.OPENAI_SETTINGS["TIMEOUT_SECONDS"] == 30.0
+    assert "sk-test" not in repr(config)
 
 
 def test_config_flavour_overrides_leave_base_defaults_unchanged() -> None:

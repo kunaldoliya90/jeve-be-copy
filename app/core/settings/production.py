@@ -3,7 +3,7 @@
 from typing import ClassVar, Literal
 
 from core.settings.base import BaseConfig
-from core.settings.consts import Flavour
+from core.settings.consts import Flavour, OpenAISettings
 
 
 class ProductionConfig(BaseConfig):
@@ -12,3 +12,9 @@ class ProductionConfig(BaseConfig):
     FLAVOUR: ClassVar[Flavour] = Flavour.PROD
 
     DEBUG: Literal[False] = False
+
+    OPENAI_SETTINGS: OpenAISettings = {
+        "BASE_URL": "https://openai-compliance-tool.services.ai.azure.com/openai/v1",
+        "API_KEY": None,
+        "TIMEOUT_SECONDS": 300,
+    }

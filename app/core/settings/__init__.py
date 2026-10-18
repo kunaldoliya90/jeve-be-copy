@@ -7,20 +7,22 @@ An unknown value stops the service instead of silently falling back to developme
 import os
 from typing import Final
 
-from core.settings.base import BaseConfig
 from core.settings.consts import DEFAULT_FLAVOUR, FLAVOUR_ENV_VAR, Flavour
 from core.settings.development import DevelopmentConfig
 from core.settings.production import ProductionConfig
 from core.settings.staging import StagingConfig
 
-SETTINGS_BY_FLAVOUR: Final[dict[Flavour, type[BaseConfig]]] = {
+# A setting only the flavours define (e.g. OPENAI_SETTINGS) type-checks only if all of them do.
+type AppConfig = DevelopmentConfig | StagingConfig | ProductionConfig
+
+SETTINGS_BY_FLAVOUR: Final[dict[Flavour, type[AppConfig]]] = {
     Flavour.DEV: DevelopmentConfig,
     Flavour.STAG: StagingConfig,
     Flavour.PROD: ProductionConfig,
 }
 
 
-def get_settings() -> BaseConfig:
+def get_settings() -> AppConfig:
     """Build the configuration for the current ``FLAVOUR``."""
     flavour = Flavour(os.getenv(FLAVOUR_ENV_VAR, DEFAULT_FLAVOUR).strip().lower())
     return SETTINGS_BY_FLAVOUR[flavour]()
