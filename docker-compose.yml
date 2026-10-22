@@ -1,0 +1,15 @@
+# Local stack (FLAVOUR=dev). Run with `make start` / `make stop`.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: build/DockerfileLocal
+    command: ["python", "main.py", "runserver", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      # File-change events do not reliably cross Docker Desktop bind mounts; poll instead.
+      WATCHFILES_FORCE_POLLING: "true"
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
+    volumes:
+      - ./app:/app
