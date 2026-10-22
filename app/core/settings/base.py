@@ -25,6 +25,10 @@ class BaseConfig(BaseSettings):
     API_PREFIX: str = Field(default="/api/jeve", pattern=API_PREFIX_PATTERN)
     LOG_LEVEL: LogLevel = LogLevel.INFO
 
+    # Browser origins allowed to call the API cross-origin, e.g. the deployed frontend.
+    # Set as JSON: APP_CORS_ALLOW_ORIGINS='["https://jeve.example.com"]'. Empty = none.
+    CORS_ALLOW_ORIGINS: list[str] = Field(default_factory=list)
+
     # API documentation, served under API_PREFIX. None disables it.
     DOCS_URL: str | None = None
     REDOC_URL: str | None = None

@@ -25,7 +25,8 @@ starts from here.
 
 ```text
 app/
-  app.py                FastAPI app; router mounted at config.API_PREFIX (/api/jeve)
+  app.py                FastAPI app; router mounted at config.API_PREFIX (/api/jeve);
+                        CORSMiddleware from config.CORS_ALLOW_ORIGINS
   applifespan.py        startup: dictConfig(config.LOGGING_CONFIG); shutdown log
   main.py               typer CLI: python app/main.py runserver
   core/
@@ -36,7 +37,8 @@ app/
       __init__.py       get_settings(): FLAVOUR env (dev|stag|prod, unknown -> error) picks
                         the class; `config` singleton; AppConfig = Dev | Stag | Prod
       base.py           BaseConfig (APP_ env prefix, frozen): DEBUG, APP_NAME, API_PREFIX,
-                        LOG_LEVEL, DOCS/REDOC/OPENAPI_URL, LOGGING_CONFIG, and the six
+                        LOG_LEVEL, CORS_ALLOW_ORIGINS, DOCS/REDOC/OPENAPI_URL,
+                        LOGGING_CONFIG, and the six
                         review limits (MAX_UPLOAD_MB, MAX_ACTIVE_REVIEWS, TOOL_WORKERS,
                         REVIEW_DEADLINE_S, STRUCTURE_CONTEXT_MAX_TOKENS, FIGURE_SAMPLES),
                         every one of them read by applifespan. Service-agnostic
@@ -299,6 +301,9 @@ These are the user's choices. They override the guidelines; do not flag them in 
   the field's. A setting nothing reads was deleted rather than left documented
   (MAX_PLAN_STEPS, FISCAL_FIRST_MONTH: no plan-length cap and no proration exist, and the
   `.env` comment on the fiscal month described a guard that was never built).
+- CORS: the frontend (Vercel) calls the API (Render) directly, cross-origin. Allowed origins
+  come from `APP_CORS_ALLOW_ORIGINS` (JSON list), empty by default. No credentials are
+  allowed: the API has no auth or cookies.
 
 ### The review harness
 
@@ -438,6 +443,9 @@ These are the user's choices. They override the guidelines; do not flag them in 
 
 Newest first, one line per change. Add a line with every change.
 
+- 2026-10-23: CORS for the deployed frontend. `CORS_ALLOW_ORIGINS` on BaseConfig (default
+  empty, set via `APP_CORS_ALLOW_ORIGINS` JSON), `CORSMiddleware` in `app.py`, two settings
+  tests. No new dependency (Starlette ships the middleware).
 - 2026-10-22 (3): em dashes removed from everything a reader sees. Four runtime strings
   carried one into the UI: the headline in `summary.py` and its stored twin in
   `orchestrator._headline_for` (now "32.5 out of 100, High risk"), `diagnosis.py`'s
