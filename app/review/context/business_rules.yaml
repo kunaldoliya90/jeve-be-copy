@@ -1,0 +1,65 @@
+# Business rules, shared by every JE type. Owned by the business, not by engineering.
+#
+# Changing anything here changes what a review concludes, so the file's SHA is recorded in
+# every review and forms part of the reuse key: no stored result is ever served across an
+# edit to this file. Every change needs an eval run before release.
+#
+# Review areas and their weights are NOT here. They differ by JE type - a tie-out entry and
+# a re-performance entry are not scored on the same things - so they live in each
+# je_types/*.yaml file.
+
+version: 3
+
+# What each final status earns, out of 100.
+# `unable_to_validate` is deliberately half credit and never zero: the check was not proven
+# wrong, it was not proven at all, and scoring it as a failure would push reviewers toward
+# guessing rather than escalating.
+credits:
+  pass: 100
+  partial: 50
+  unable_to_validate: 50
+  missing_evidence: 0
+  fail: 0
+
+# A check waiting for a person earns at most this, whatever its status, and marks the whole
+# score provisional.
+needs_review_cap: 50
+
+# Listed highest first. The lowest band must start at 0 so every score matches one.
+#
+# `risk` is the entry's risk rating, and it is a property of the band rather than a second
+# table of thresholds. The rating used to be typed on the upload form and checked against
+# nothing; it is now read off the score the review computed, which means moving a threshold
+# here moves the rating with it and the two can never drift apart.
+bands:
+  - { min: 81, label: High compliance, risk: low }
+  - { min: 51, label: Medium risk, risk: medium }
+  - { min: 0, label: High risk, risk: high }
+
+# Differences below this count as zero. Spreadsheet rounding on a 27.9m entry produces a few
+# thousandths of a cent, and failing an otherwise clean entry on that would be noise.
+tolerance: "0.005"
+
+trend:
+  lookback_months: 3
+  # Unresolved until the business sets it. While it is null the trend area scores half
+  # credit on every review and is never a pass - see the open decisions in the design.
+  max_change_pct: null
+
+pii:
+  patterns: [email, iban, phone, ssn, nino, pan]
+  # Preparer and approver names are expected on a signed-off entry. Reporting them as
+  # findings would bury the ones that matter.
+  exclude_facts: [preparer, approver]
+  masked_value_regex: '^(\*{2,}|X{2,}\d{2,4})$'
+
+# Thousands of row-level exceptions are unreadable as a list, so above this many they are
+# grouped by cause before anyone reads them. Below it the exceptions are shown as they are:
+# grouping six rows into three causes costs a model call and tells a reviewer nothing.
+clustering:
+  min_exceptions: 25
+  max_clusters: 6
+
+# A broken reference or an external link is an observation. It can accompany a failure but
+# can never be the only reason for one.
+formula_defects_can_fail_check: false

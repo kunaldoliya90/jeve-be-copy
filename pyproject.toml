@@ -57,6 +57,11 @@ mypy_path = "app"
 # app/ folder itself must not be treated as a namespace package.
 namespace_packages = false
 
+# pyxlsb ships no type information and has no stub package.
+[[tool.mypy.overrides]]
+module = ["pyxlsb.*"]
+ignore_missing_imports = true
+
 [tool.pydantic-mypy]
 init_forbid_extra = true
 warn_required_dynamic_aliases = true
@@ -68,6 +73,9 @@ minversion = "9.0"
 testpaths = ["app/tests"]
 pythonpath = ["app"]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
+markers = [
+    "golden: runs against the real sample workbooks in skills/docs; seconds, not milliseconds",
+]
 filterwarnings = [
     "error",
     # Starlette >= 1.8 prefers the `httpx2` fork for TestClient; `httpx` remains supported.

@@ -88,6 +88,7 @@ async def test_generate_sends_request_to_model_deployment() -> None:
         input="Is this journal entry balanced?",
         instructions="You are an auditor.",
         reasoning={"effort": "high"},
+        text=omit,
         max_output_tokens=2_000,
     )
 
@@ -98,8 +99,37 @@ async def test_generate_omits_unset_options() -> None:
     await OpenAILLMProvider(client, OpenAIModel.GPT_4O).generate(LLMRequest(input="Hi"))
 
     client.responses.create.assert_awaited_once_with(
-        model="gpt-4o", input="Hi", instructions=omit, reasoning=omit, max_output_tokens=omit
+        model="gpt-4o",
+        input="Hi",
+        instructions=omit,
+        reasoning=omit,
+        text=omit,
+        max_output_tokens=omit,
     )
+
+
+async def test_generate_binds_a_schema_strictly_when_one_is_given() -> None:
+    """Strict ``json_schema``, not a request in the prompt for JSON.
+
+    A parser that has to guess whether it was handed a verdict or an apology is a parser
+    that eventually guesses wrong, and a wrong guess here reaches an audit report.
+    """
+    client = _client()
+    schema = {"type": "object", "additionalProperties": False, "properties": {}}
+
+    await OpenAILLMProvider(client, OpenAIModel.GPT_5_5).generate(
+        LLMRequest(input="Hi", response_schema=schema, schema_name="verdicts")
+    )
+
+    sent = client.responses.create.await_args.kwargs["text"]
+    assert sent == {
+        "format": {
+            "type": "json_schema",
+            "name": "verdicts",
+            "schema": schema,
+            "strict": True,
+        }
+    }
 
 
 async def test_generate_maps_openai_usage_and_prices_it_for_the_model() -> None:

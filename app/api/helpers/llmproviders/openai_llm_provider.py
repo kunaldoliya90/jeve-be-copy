@@ -4,7 +4,7 @@ import logging
 from typing import ClassVar, cast
 
 from openai import APIError, AsyncOpenAI, omit
-from openai.types.responses import Response
+from openai.types.responses import Response, ResponseInputItemParam, ResponseTextConfigParam
 from openai.types.shared_params import Reasoning
 
 from api.consts import LLMProviderName, OpenAIModel
@@ -50,12 +50,31 @@ class OpenAILLMProvider(BaseLLMProvider):
             if request.reasoning_effort is not None
             else omit
         )
+        # Strict structured output when a schema is given. The GPT-5 family rejects the
+        # sampling parameters outright, so none are sent: a 400 is not retried, and sending
+        # one would cost every call silently.
+        text_format = (
+            cast(
+                ResponseTextConfigParam,
+                {
+                    "format": {
+                        "type": "json_schema",
+                        "name": request.schema_name,
+                        "schema": request.response_schema,
+                        "strict": True,
+                    }
+                },
+            )
+            if request.response_schema is not None
+            else omit
+        )
         try:
             response = await self._client.responses.create(
                 model=self.model,
-                input=request.input,
+                input=_input_of(request),
                 instructions=request.instructions or omit,
                 reasoning=reasoning,
+                text=text_format,
                 max_output_tokens=request.max_output_tokens or omit,
             )
         except APIError as exc:
@@ -80,3 +99,29 @@ class OpenAILLMProvider(BaseLLMProvider):
             output_tokens=response.usage.output_tokens,
             reasoning_tokens=response.usage.output_tokens_details.reasoning_tokens,
         )
+
+
+def _input_of(request: LLMRequest) -> "str | list[ResponseInputItemParam]":
+    """The request's input: plain text, or text and one image together.
+
+    A string where there is no image, because that is the shape every other call in the
+    harness sends and there is no reason to complicate the common path.
+    """
+    if request.image is None:
+        return request.input
+    return cast(
+        "list[ResponseInputItemParam]",
+        [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": request.input},
+                    {
+                        "type": "input_image",
+                        "image_url": request.image.data_url,
+                        "detail": request.image.detail,
+                    },
+                ],
+            }
+        ],
+    )

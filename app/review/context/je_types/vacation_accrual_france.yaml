@@ -1,0 +1,326 @@
+# France vacation accrual (CP + RTT). Owned by the business.
+#
+# This file says WHAT a review of this entry must establish, never WHERE anything sits in a
+# particular workbook - that is the sheet map's job, and it is worked out per file. Adding
+# another country or another leave scheme is a new file like this one, not new code, unless
+# the arithmetic itself differs.
+#
+# Business context for everything below: the `vacation-accrual` skill.
+
+id: vacation-accrual-france
+version: 2
+name: France vacation accrual
+process: Record to Report
+sub_process: Payroll
+aliases:
+  - CP/RTT accrual
+  - conges payes accrual
+  - GPAY accrual
+  - vacation provision
+  - leave accrual
+objective: >
+  Prove the vacation accrual is independently re-performable from employee-level leave and
+  payroll data, correctly classified between FTE and non-FTE, and carried faithfully into
+  the posted journal entry.
+
+# --- how a workbook is recognised as this type, before any model call -------------------
+discriminators:
+  precedence: 10
+  variants:
+    # Tested first on purpose: a GPAY sheet also carries a daily-salary column and would
+    # match the looser global variant, binding the wrong arithmetic and returning a number
+    # that looks entirely plausible.
+    - id: cp_rtt_france
+      requires_all: [cp_provision, rtt_provision, daily_salary_rate]
+      rejects: [adjusted_final_days]
+    - id: ms_vacation_global
+      requires_all: [adjusted_final_days, daily_salary]
+      rejects: [cp_provision, rtt_provision]
+  # At least one of these must be cited from outside the posting table. The posting tab's
+  # own labels are the preparer's assertion; the calculation, methodology and master data
+  # tabs are evidence.
+  corroborating:
+    - accounts_present
+    - fte_classification_column
+    - reversal_date_populated
+  never:
+    # One sample workbook holds its entire calculation on a tab called DENT.
+    - tab_name_match
+
+# --- the parameters the arithmetic needs ------------------------------------------------
+methodology:
+  # Never an assumed 30. The denominator comes from the approved methodology, and
+  # methodology_drift diffs the workbook's own methodology tab against this.
+  salary_per_day_denominator: approved
+  eligible_leave_types: [CP, RTT]
+  balance_floored_at_zero: true
+  notes:
+    - >
+      965 rows in one sample workbook had taken more leave than earned to date. Without the
+      floor those rows would reduce the provision.
+    - >
+      The workbooks add a twelfth of the RTT provision to a whole-year CP provision. It is
+      reproduced because it is what was posted, and reported per affected row rather than
+      silently accepted or silently corrected.
+
+accounts:
+  source: master_data
+  fte_expense: "720008"
+  non_fte_expense: "720023"
+  liability: "322000"
+
+population:
+  include_fte: [regular, expat, commission_eligible, retail, direct_production]
+  include_non_fte: [co_op, intern, visiting_researcher]
+  exclude: [agency_temp, vendor, contractor, fixed_term]
+
+# --- what must be found, and what it must hold ------------------------------------------
+tables:
+  calculation:
+    required: true
+    meanings:
+      [employee_ref, company_code, cost_center, staffing_type, cp_provision, rtt_provision,
+       daily_salary_rate, currency, fte_accrual, non_fte_accrual, total_accrual]
+  employee_master:
+    required: true
+    meanings: [employee_ref, sap_company, cost_center, staffing_type, start_date, active]
+  aggregation:
+    required: true
+    meanings: [company_code, currency, cost_center, fte_accrual, non_fte_accrual]
+  je_staging:
+    required: false
+    meanings: [company_code, account, currency, cost_center, line_amount]
+  je_posting:
+    required: true
+    meanings:
+      [header_id, company_code, account, currency, cost_center, line_amount, posting_date,
+       reversal_date, fiscal_year, fiscal_period]
+  entity_master:
+    required: false
+    meanings: [company_code, company_name, currency, liability_account]
+  self_check:
+    required: false
+
+facts: [fiscal_period, hash_total, je_total, preparer, approver, posting_date, reversal_date]
+
+# `expected` is what a reviewer is looking for, in the business's own words. It is read by
+# a person on the evidence register and never matched against anything: matching is the
+# sheet map's job, and a register that only says "missing" tells nobody where to look.
+evidence:
+  - id: methodology
+    required: true
+    kind: sheet
+    expected: Documented leave-accrual methodology and assumptions.
+    remediation: Attach the methodology tab stating the calculation basis and denominator.
+  - id: accrual_calculation
+    required: true
+    kind: sheet
+    expected: Leave balances and daily-rate working paper.
+    remediation: Attach the employee-level working that the accrual is calculated on.
+  - id: employee_master
+    required: true
+    kind: sheet
+    expected: Employee population, status, and FTE data.
+    remediation: Attach the employee master extract covering the reporting date.
+  - id: approval
+    required: true
+    kind: sheet_or_fact
+    expected: Approval for the leave accrual.
+    remediation: Record the approver and the approval date on the entry.
+  - id: vacation_provision_file
+    required: false
+    kind: sheet
+    expected: Vacation provision file supporting this journal entry.
+  - id: provider_screenshot
+    required: false
+    kind: picture
+    expected: Provider or payroll screenshot evidencing the posted amount.
+    corroborate: [je_total, hash_total]
+
+# --- what the review is scored on -------------------------------------------------------
+# Confirmed by the business on 2026-10-20. Weights total 100, which the loader enforces.
+#
+# Re-performance carries the most because it is the only area that establishes the number
+# itself; JE reconciliation is separate from it because "is the number right" and "did the
+# right number get posted" are different failures. The employee-level areas are scored by
+# exception rate and impact share, not weakest check, which would score three bad rows in
+# forty thousand as a zero.
+#
+# Two areas the payroll design scored are deliberately absent here, also confirmed:
+#   PII    - employee data on the calculation tab is expected for this JE type, so scoring
+#            it would cap every review at 90 forever. It runs as an observation instead and
+#            flags personal data reaching the SAP-facing posting tab, where it does belong.
+#   Trend  - max_change_pct is unset, so a trend area would score half credit on every
+#            review and cap the score for a reason unrelated to the entry. The rules and
+#            tooling stay in business_rules.yaml; adding the area later is a YAML edit.
+areas:
+  evidence_completeness: { weight: 10, method: baseline_share }
+  population: { weight: 15, method: exception_rate }
+  classification: { weight: 10, method: exception_rate }
+  salary_validation: { weight: 10, method: impact_share }
+  leave_validation: { weight: 10, method: impact_share }
+  accrual_reperformance: { weight: 25, method: weakest_check }
+  je_reconciliation: { weight: 15, method: weakest_check }
+  period: { weight: 5, method: weakest_check }
+
+checks:
+  - id: evidence_baseline
+    area: evidence_completeness
+    question: Are the four required evidence items present and verified?
+    decided_by: judgement
+    risk: The entry is unsupported and nobody can re-perform it later.
+    recipe: { tool: evidence_register, args: {} }
+
+  - id: population_complete
+    area: population
+    question: >
+      Is every employee in the working present in the employee master, with no duplicates,
+      no unexpected additions and nobody inactive at the reporting date?
+    decided_by: figures
+    risk: Employees missing, duplicated or ineligible over- or understate the accrual.
+    recipe: { tool: population_reconcile, args: { table: calculation, master: employee_master } }
+
+  # The tool compares each row's classification against the side its amount sits on, which
+  # is what the workbook itself can prove. Comparing the classification against the employee
+  # master needs a joinable employee reference, and in these files it is redacted; the
+  # population check carries that gap.
+  - id: classification_matches_master
+    area: classification
+    question: >
+      Does each employee's amount sit on the side their FTE or non-FTE classification says
+      it should?
+    decided_by: figures
+    risk: A misclassified employee posts a correct amount to the wrong expense account.
+    recipe: { tool: classification_check, args: { table: calculation } }
+
+  - id: salary_agrees_with_source
+    area: salary_validation
+    question: Does the salary used agree with the source, and is it effective at the date?
+    decided_by: figures
+    risk: An outdated or mismapped salary misstates every day of accrued leave.
+    recipe: { tool: salary_validate, args: { table: calculation, master: employee_master } }
+
+  - id: salary_per_day_follows_methodology
+    area: salary_validation
+    question: >
+      Does the leave balance times the daily rate give the accrual the workbook states,
+      employee by employee?
+    decided_by: figures
+    risk: An amount that cannot be rebuilt from its own inputs has no basis.
+    recipe: { tool: recalc_salary_per_day, args: { table: calculation } }
+
+  - id: leave_balance_recalculates
+    area: leave_validation
+    question: Does opening + earned - taken +/- adjustments equal the closing balance?
+    decided_by: figures
+    risk: The leave balance is the quantity being valued; an error here scales linearly.
+    recipe: { tool: recalc_leave_balance, args: { table: calculation } }
+
+  - id: accrual_reperforms
+    area: accrual_reperformance
+    question: >
+      Does an independent recalculation of eligible leave times salary per day agree with
+      the working, row by row?
+    decided_by: figures
+    risk: >
+      The whole purpose of the review. A total that agrees while rows cancel out is a
+      coincidence; row-level agreement is the evidence.
+    recipe: { tool: recalc_accrual, args: { table: calculation } }
+
+  - id: negative_accruals_explained
+    area: accrual_reperformance
+    question: Are any negative employee-level accruals expected rather than bad data?
+    decided_by: figures
+    risk: A negative accrual is either a genuine adjustment or a mapping error.
+    recipe: { tool: negative_scan, args: { table: calculation, column: total_accrual } }
+
+  - id: fte_split_aggregates
+    area: je_reconciliation
+    question: Does FTE accrual plus non-FTE accrual equal the stated total, per employee?
+    decided_by: figures
+    risk: A split that does not sum hides an employee counted twice or not at all.
+    recipe: { tool: recalc_accrual, args: { table: calculation } }
+
+  - id: working_ties_to_posting
+    area: je_reconciliation
+    question: Does the employee-level calculation tie to the posted entry, by company code?
+    decided_by: figures
+    risk: Amounts lost between the working and the entry still leave a grand total agreeing.
+    # The aggregation tab is deliberately not a hop in this chain. It is an Excel pivot
+    # whose rows include its own subtotals, so summing them counts the same money several
+    # times over - on one sample file, exactly three times. A hop that cannot be summed
+    # without double counting would report a difference that is not there, which is a worse
+    # outcome than not checking it: see the open items in docs/context.md.
+    recipe: { tool: rollup_chain, args: { hops: [calculation, je_posting] } }
+
+  - id: accounts_mapped_correctly
+    area: je_reconciliation
+    question: Are FTE, non-FTE and liability amounts posted to the accounts the master states?
+    decided_by: figures
+    risk: The right total in the wrong account misstates the expense split.
+    recipe: { tool: account_mapping, args: { table: je_posting, master: entity_master } }
+
+  - id: entry_balances
+    area: je_reconciliation
+    question: Do total debits equal total credits, overall and per company code and currency?
+    decided_by: figures
+    risk: An unbalanced entry will not post, or will post against a suspense account.
+    recipe: { tool: balance, args: { table: je_posting, group_by: [company_code, currency] } }
+
+  - id: stated_totals_agree
+    area: je_reconciliation
+    question: Do the hash total and JE total stated on the entry equal the sum of the lines?
+    decided_by: figures
+    risk: The preparer's own control total is stale or hardcoded.
+    recipe: { tool: control_totals, args: { table: je_posting, facts: [hash_total, je_total] } }
+
+  - id: posting_period_agrees
+    area: period
+    question: Do the fiscal period on the entry, in the header and on the lines all agree?
+    decided_by: judgement
+    risk: Leave, salary or status data from the wrong period misstates the obligation.
+    recipe: { tool: period_agreement, args: { table: je_posting } }
+
+  - id: reversal_is_configured
+    area: period
+    question: >
+      Is the reversal date later than the posting date, using the same accounts with
+      opposite signs, and not duplicated into another period?
+    decided_by: figures
+    risk: A missing or duplicated reversal double-counts the liability.
+    recipe: { tool: reversal_check, args: { table: je_posting } }
+
+  # Reported to the reviewer, never scored.
+  - id: methodology_unchanged
+    area: observation
+    question: Does the methodology tab state the same period the entry posts in?
+    decided_by: figures
+    risk: >
+      A workbook rolled forward without being re-based passes every arithmetic check,
+      because each figure agrees with the others under the wrong basis.
+    recipe: { tool: methodology_drift, args: { table: je_posting } }
+
+  - id: manual_updates_supported
+    area: observation
+    question: Are numbers typed over formulas explained?
+    decided_by: judgement
+    risk: >
+      One sample file holds 137 hardcoded zeros in a calculated column, which drops a leg of
+      the provision for those employees.
+    recipe: { tool: formula_health, args: {} }
+
+  - id: personal_data_located
+    area: observation
+    question: Where does personal data appear, and is it expected on that tab?
+    decided_by: figures
+    risk: >
+      Employee data is expected on the working and the master; on the SAP-facing posting tab
+      it is a leak.
+    recipe:
+      { tool: pii_scan, args: { expected_on: [calculation, employee_master],
+                                forbidden_on: [je_posting] } }
+
+known_patterns:
+  - The calculation tab links its provision columns to a payroll extract on another tab.
+  - A preamble of batch options sits above the real line header on the posting tab.
+  - Employee name columns arrive redacted to "Confidential".

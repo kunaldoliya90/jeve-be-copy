@@ -30,6 +30,24 @@ class BaseConfig(BaseSettings):
     REDOC_URL: str | None = None
     OPENAPI_URL: str | None = None
 
+    # --- review harness ---------------------------------------------------------------
+    MAX_UPLOAD_MB: int = Field(default=25, gt=0, description="Rejected above this, unparsed")
+    MAX_ACTIVE_REVIEWS: int = Field(
+        default=4, gt=0, description="Per worker. Each pins a thread and a parsed workbook"
+    )
+    TOOL_WORKERS: int = Field(default=8, gt=0, description="Thread pool for step 13")
+    REVIEW_DEADLINE_S: float = Field(default=600.0, gt=0)
+    STRUCTURE_CONTEXT_MAX_TOKENS: int = Field(
+        default=8_000, gt=0, description="Cap on what AI-1 may see of the workbook"
+    )
+    FIGURE_SAMPLES: int = Field(
+        default=10, gt=0, description="Exemplars per figure; exceptions are kept in full"
+    )
+
+    @property
+    def MAX_UPLOAD_BYTES(self) -> int:
+        return self.MAX_UPLOAD_MB * 1024 * 1024
+
     @field_validator("LOG_LEVEL", mode="before")
     @classmethod
     def _normalise_log_level(cls, value: object) -> object:

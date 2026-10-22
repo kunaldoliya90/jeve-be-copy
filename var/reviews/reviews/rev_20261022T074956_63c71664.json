@@ -1,0 +1,860 @@
+{
+  "review_id": "rev_20261022T074956_63c71664",
+  "status": "needs_review",
+  "je_type": "vacation-accrual-france",
+  "entry": {
+    "document_number": "236264",
+    "risk_rating": "high",
+    "je_type": "vacation-accrual-france",
+    "je_type_name": "France vacation accrual",
+    "je_type_variant": "cp_rtt_france",
+    "process": "Record to Report",
+    "sub_process": "Payroll",
+    "period": "2026 P08"
+  },
+  "score": {
+    "total": 37.5,
+    "band": "High risk",
+    "risk_rating": "high",
+    "areas": [
+      {
+        "area": "evidence_completeness",
+        "weight": 10,
+        "method": "baseline_share",
+        "score": 0.0,
+        "reason": "1 check(s); 4 of 6 expected evidence layers are present in the workbook; missing: approval, vacation_provision_file"
+      },
+      {
+        "area": "population",
+        "weight": 15,
+        "method": "exception_rate",
+        "score": 50.0,
+        "reason": "1 check(s); 1 waiting for a person; 2,280 employee rows carry only 1 distinct reference(s), so the column is redacted or constant and the population cannot be reconciled against the master"
+      },
+      {
+        "area": "classification",
+        "weight": 10,
+        "method": "exception_rate",
+        "score": 100.0,
+        "reason": "1 check(s); 1 waiting for a person; 2,244 classified row(s) checked; 0 carry an amount on the wrong side"
+      },
+      {
+        "area": "salary_validation",
+        "weight": 10,
+        "method": "impact_share",
+        "score": 50.0,
+        "reason": "2 check(s); 1 waiting for a person; 778 of 778 employees with an RTT amount carry a usable daily rate. The workbook carries no independent salary source, so the rate itself is not checked against one"
+      },
+      {
+        "area": "leave_validation",
+        "weight": 10,
+        "method": "impact_share",
+        "score": 50.0,
+        "reason": "1 check(s); 1 waiting for a person"
+      },
+      {
+        "area": "accrual_reperformance",
+        "weight": 25,
+        "method": "weakest_check",
+        "score": 0.0,
+        "reason": "2 check(s); 1 waiting for a person; weakest is negative_accruals_explained (fail); FTE plus non-FTE against the stated total: 2,280 of 2,280 rows agree"
+      },
+      {
+        "area": "je_reconciliation",
+        "weight": 15,
+        "method": "weakest_check",
+        "score": 50.0,
+        "reason": "5 check(s); 2 waiting for a person; weakest is fte_split_aggregates (pass); FTE plus non-FTE against the stated total: 2,280 of 2,280 rows agree"
+      },
+      {
+        "area": "period",
+        "weight": 5,
+        "method": "weakest_check",
+        "score": 50.0,
+        "reason": "2 check(s); 2 waiting for a person; weakest is posting_period_agrees (unable_to_validate); 1 distinct fiscal period(s) on the entry: 08; 1 fiscal year(s)"
+      }
+    ],
+    "provisional": true
+  },
+  "checks": [
+    {
+      "check_id": "evidence_baseline",
+      "area": "evidence_completeness",
+      "final_status": "fail",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "evidence_baseline",
+        "status": "fail",
+        "conclusion": "Required evidence is incomplete: the register shows only 4 of 6 expected evidence layers are present, with approval and vacation_provision_file missing.",
+        "findings": [
+          {
+            "kind": "exception",
+            "severity": "high",
+            "text": "Unsupported evidence baseline: 4 of 6 expected evidence layers are present; missing approval and vacation_provision_file. This matters because the entry cannot be fully supported or re-performed later from the required evidence set.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "evidence_baseline",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The fail conclusion is supported: the evidence register says only 4 of 6 expected evidence layers are present and identifies approval and vacation_provision_file as missing.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "population_complete",
+      "area": "population",
+      "final_status": "unable_to_validate",
+      "needs_review": true,
+      "review_reasons": [
+        "map_unverified"
+      ],
+      "verdict": null,
+      "challenge": null
+    },
+    {
+      "check_id": "classification_matches_master",
+      "area": "classification",
+      "final_status": "unable_to_validate",
+      "needs_review": true,
+      "review_reasons": [
+        "incomplete_row_coverage",
+        "status_overridden",
+        "challenge_disagreed"
+      ],
+      "verdict": {
+        "check_id": "classification_matches_master",
+        "status": "pass",
+        "conclusion": "The classification check passed for the rows compared: 2,244 classified rows were checked and 0 carried an amount on the wrong side.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Classification matched for the tested population: 2,244 classified rows were checked and 0 carried an amount on the wrong side. The figure does not cover every row because total rows were 2459 and compared rows were 2244.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "classification_matches_master",
+        "agrees": false,
+        "status_should_be": "unable_to_validate",
+        "reason": "The pass is not proven for the full population. The figure checked 2244 classified rows and 0 wrong-side amounts, but rows.total is 2459 and covers_every_row is false, so the evidence does not cover every row.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "salary_agrees_with_source",
+      "area": "salary_validation",
+      "final_status": "unable_to_validate",
+      "needs_review": true,
+      "review_reasons": [
+        "incomplete_row_coverage",
+        "status_overridden",
+        "challenge_disagreed"
+      ],
+      "verdict": {
+        "check_id": "salary_agrees_with_source",
+        "status": "pass",
+        "conclusion": "The salary validation figure is marked as passed for RTT rows: 778 of 778 employees with an RTT amount carry a usable daily rate. The workbook carries no independent salary source, so the rate itself was not checked against one.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "medium",
+            "text": "Salary validation was limited: 778 of 778 employees with an RTT amount carry a usable daily rate, but the workbook carries no independent salary source and the rate itself is not checked against one. This matters because the question of agreement to an external source and effectiveness at date is not evidenced beyond usable rates.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "salary_agrees_with_source",
+        "agrees": false,
+        "status_should_be": "unable_to_validate",
+        "reason": "The pass is not proven. The figure states the workbook carries no independent salary source, so the rate itself is not checked against one. It also covers only 778 compared rows out of rows.total 2280 and covers_every_row is false.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "salary_per_day_follows_methodology",
+      "area": "salary_validation",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "salary_per_day_follows_methodology",
+        "status": "pass",
+        "conclusion": "The accrual amount re-performs from balance in days times daily rate for all rows with inputs: 2,280 of 2,280 rows agree.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Employee-level salary-per-day re-performance passed: balance in days times daily rate agreed for 2,280 of 2,280 rows with all three inputs, with 0 exceptions. This matters because the stated accrual can be rebuilt from its own inputs for every covered row.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "salary_per_day_follows_methodology",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The pass conclusion is supported for this arithmetic check: the figure says 2280 of 2280 rows with all three inputs agree and covers_every_row is true, with 0 exceptions.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "leave_balance_recalculates",
+      "area": "leave_validation",
+      "final_status": "unable_to_validate",
+      "needs_review": true,
+      "review_reasons": [
+        "map_unverified"
+      ],
+      "verdict": null,
+      "challenge": null
+    },
+    {
+      "check_id": "accrual_reperforms",
+      "area": "accrual_reperformance",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "accrual_reperforms",
+        "status": "pass",
+        "conclusion": "The independent accrual recalculation passed row by row: FTE plus non-FTE against the stated total agreed for 2,280 of 2,280 rows.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Accrual re-performance passed for every row covered by the figure: FTE plus non-FTE against the stated total agreed for 2,280 of 2,280 rows, with 0 exceptions. This matters because row-level agreement supports the employee-level accrual calculation rather than only a total agreement.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "accrual_reperforms",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The pass conclusion is supported for the stated row-level recalculation: FTE plus non-FTE against the stated total agrees for 2280 of 2280 rows, covers_every_row is true, and exceptions are 0.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "negative_accruals_explained",
+      "area": "accrual_reperformance",
+      "final_status": "fail",
+      "needs_review": true,
+      "review_reasons": [
+        "negative_accrual",
+        "untraced_number"
+      ],
+      "verdict": {
+        "check_id": "negative_accruals_explained",
+        "status": "fail",
+        "conclusion": "Negative employee-level accruals are not cleared: 3 employee rows carry a negative total_accrual, 1638.20 in total.",
+        "findings": [
+          {
+            "kind": "exception",
+            "severity": "medium",
+            "text": "Negative accruals identified: 3 employee rows carry a negative total_accrual, 1638.20 in total. Examples are AH936 at -896.39, AH234 at -704.89, and AH114 at -36.92; this matters because a negative accrual may indicate either a genuine adjustment or a mapping/data error requiring support.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "negative_accruals_explained",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The fail conclusion is supported: the scan reports 3 employee rows with negative total_accrual, with listed differences of -896.39, -704.89, and -36.92 and total 1638.20.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "fte_split_aggregates",
+      "area": "je_reconciliation",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "fte_split_aggregates",
+        "status": "pass",
+        "conclusion": "The FTE and non-FTE split aggregates correctly: FTE plus non-FTE against the stated total agreed for 2,280 of 2,280 rows.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "FTE split aggregation passed for every row covered by the figure: FTE plus non-FTE against the stated total agreed for 2,280 of 2,280 rows, with 0 exceptions. This matters because the split did not identify an employee counted twice or omitted in the stated total.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "fte_split_aggregates",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The pass conclusion is supported for the split aggregation: FTE plus non-FTE against the stated total agrees for 2280 of 2280 rows, covers_every_row is true, and exceptions are 0.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "working_ties_to_posting",
+      "area": "je_reconciliation",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "working_ties_to_posting",
+        "status": "pass",
+        "conclusion": "The employee-level calculation ties to the posting by company code: calculation to JE posting compared 4 groups and 0 differ.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Working-to-posting rollup passed: calculation -> je_posting compared 4 group(s), with 0 differences. The supporting figures include 28672591.24 and 28672591.2399999994545.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "working_ties_to_posting",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The pass conclusion is supported: the rollup chain says calculation to JE posting compared 4 groups and 0 differ.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "accounts_mapped_correctly",
+      "area": "je_reconciliation",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "accounts_mapped_correctly",
+        "status": "pass",
+        "conclusion": "Account mapping passed: 3 accounts used were checked against the 3 accounts the master allows.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Account mapping passed: 3 account(s) used were checked against 3 accounts the master allows. This matters because the FTE, non-FTE, and liability posting accounts were within the allowed account set.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "accounts_mapped_correctly",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The pass conclusion is supported by the account mapping figure, which says 3 accounts used were checked against the 3 accounts the master allows, with 0 exceptions.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "entry_balances",
+      "area": "je_reconciliation",
+      "final_status": "pass",
+      "needs_review": true,
+      "review_reasons": [
+        "untraced_number"
+      ],
+      "verdict": {
+        "check_id": "entry_balances",
+        "status": "pass",
+        "conclusion": "The entry balance check passed: debits and credits net to 2.545E-10 across 432 lines in 4 groups.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Entry balance passed: debits and credits net to 2.545E-10 across 432 lines in 4 groups, with 0 exceptions. This matters because the entry is balanced overall and by the groups tested by the tool.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "entry_balances",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The pass conclusion is supported within the provided tolerance: the balance figure says debits and credits net to 2.545E-10 across 432 lines in 4 groups, with 0 exceptions.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "stated_totals_agree",
+      "area": "je_reconciliation",
+      "final_status": "pass",
+      "needs_review": true,
+      "review_reasons": [
+        "untraced_number"
+      ],
+      "verdict": {
+        "check_id": "stated_totals_agree",
+        "status": "pass",
+        "conclusion": "The stated hash_total and je_total agree to the tested line totals: hash_total agrees on the debit side and je_total agrees on the net.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Hash total control passed: hash_total states 28672591.239999995; the lines give 2.545E-10 net, 57345182.4799999986545 gross, and 28672591.2399999994545 on the debit side, with a reported difference of -4.4545E-9. This matters because the preparer control total is supported by the line data on the tested basis.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          },
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "JE total control passed: je_total states 0; the lines give 2.545E-10 net, 57345182.4799999986545 gross, and 28672591.2399999994545 on the debit side, with a reported difference of -2.545E-10. This matters because the stated JE total is supported by the line net on the tested basis.",
+            "evidence_ids": [
+              "F-02"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "stated_totals_agree",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The pass conclusion is supported within the provided tolerance: hash_total states 28672591.239999995 while the debit side is 28672591.2399999994545, and je_total states 0 while the line net is 2.545E-10.",
+        "evidence_ids": [
+          "F-01",
+          "F-02"
+        ]
+      }
+    },
+    {
+      "check_id": "posting_period_agrees",
+      "area": "period",
+      "final_status": "unable_to_validate",
+      "needs_review": true,
+      "review_reasons": [
+        "untraced_number",
+        "challenge_disagreed"
+      ],
+      "verdict": {
+        "check_id": "posting_period_agrees",
+        "status": "pass",
+        "conclusion": "The period agreement check passed: there is 1 distinct fiscal period on the entry and 1 fiscal year.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Posting period agreement passed: the entry has 1 distinct fiscal period, shown as period 08, and 1 fiscal year; the example shows period 08 across 432 lines. This matters because the entry header and lines are consistent for the tested period fields.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "posting_period_agrees",
+        "agrees": false,
+        "status_should_be": "unable_to_validate",
+        "reason": "The pass is not fully proven by the cited figure. It reports 1 distinct fiscal period and 1 fiscal year, with an example period of 08 on 432 lines, but it does not quote the fiscal year value or show the header period, so agreement between entry, header, and lines is not evidenced.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "reversal_is_configured",
+      "area": "period",
+      "final_status": "unable_to_validate",
+      "needs_review": true,
+      "review_reasons": [
+        "challenge_disagreed"
+      ],
+      "verdict": {
+        "check_id": "reversal_is_configured",
+        "status": "pass",
+        "conclusion": "The reversal check passed: 432 lines carry a posting date, with 0 missing reversal dates and 0 reversing on or before posting.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Reversal configuration passed: 432 line(s) carry a posting date; 0 have no reversal date and 0 reverse on or before posting. This matters because the check did not identify a missing or same-day/prior reversal.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "reversal_is_configured",
+        "agrees": false,
+        "status_should_be": "unable_to_validate",
+        "reason": "The pass is not fully proven. The figure shows 432 lines have posting dates, 0 have no reversal date, and 0 reverse on or before posting, but the check also asks whether the reversal uses the same accounts with opposite signs and is not duplicated into another period; those points are not covered by the figure.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "methodology_unchanged",
+      "area": "observation",
+      "final_status": "fail",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "methodology_unchanged",
+        "status": "fail",
+        "conclusion": "The methodology check failed because the methodology tab has no period stamp to match to the entry posted in period 08, and the stated leave-type basis differs from the approved basis.",
+        "findings": [
+          {
+            "kind": "exception",
+            "severity": "high",
+            "text": "Methodology period support is missing: the methodology tab states no period stamp, so it cannot be matched to the entry posted in period 08. This matters because a rolled-forward workbook could pass arithmetic checks while using the wrong period basis.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          },
+          {
+            "kind": "exception",
+            "severity": "high",
+            "text": "Methodology leave-type basis does not match the approved basis: the stated leave type not approved is vacation, while the approved leave types are CP, RTT; the stated approved leave types are cp, rtt while the expected basis is CP, RTT. This matters because the accrual methodology may include or exclude the wrong leave categories.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "methodology_unchanged",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The fail conclusion is supported: the methodology tab has no period stamp to match to period 08, and the figure lists differences between stated and approved leave-type basis, including stated vacation and expected CP, RTT.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "manual_updates_supported",
+      "area": "observation",
+      "final_status": "fail",
+      "needs_review": true,
+      "review_reasons": [
+        "untraced_number"
+      ],
+      "verdict": {
+        "check_id": "manual_updates_supported",
+        "status": "fail",
+        "conclusion": "Manual update support failed: the formula health tool reports value_error: 882, typed_over_formula: 5, and external_link: 1, with 888 exceptions in total.",
+        "findings": [
+          {
+            "kind": "exception",
+            "severity": "medium",
+            "text": "Unsupported manual updates identified: typed_over_formula affects 5 cells, with examples including Check Pivots!AA7, Check Pivots!AE7, Check Pivots!AB7, Check Pivots!AF7, JE Create!C14, and JE Create!C15. This matters because numbers typed over formulas are not explained by the evidence provided.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          },
+          {
+            "kind": "observation",
+            "severity": "medium",
+            "text": "Formula health observations were also reported: value_error: 882 and external_link: 1, contributing to 888 total exceptions. These formula-health defects matter because they indicate workbook integrity issues, but they are observations rather than the sole basis for failure.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "manual_updates_supported",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The fail conclusion is supported: formula health reports 888 exceptions, including typed_over_formula: 5, value_error: 882, and external_link: 1.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "personal_data_located",
+      "area": "observation",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "personal_data_located",
+        "status": "pass",
+        "conclusion": "The personal data scan passed: no personal data was found on tabs where it does not belong.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "PII scan passed with 0 exceptions: no personal data was found on tabs where it does not belong. This matters because the SAP-facing posting tab was not identified as leaking employee data.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "personal_data_located",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The pass conclusion is supported by the PII scan figure, which says no personal data on tabs where it does not belong and reports 0 exceptions.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    }
+  ],
+  "pii_flagged": false,
+  "pii_findings": [],
+  "evidence_register": [
+    {
+      "item_id": "methodology",
+      "expected": "Documented leave-accrual methodology and assumptions.",
+      "required": true,
+      "status": "available",
+      "location": "Methodology",
+      "remediation": "Attach the methodology tab stating the calculation basis and denominator.",
+      "note": "Satisfied by Methodology.",
+      "needs_review": false
+    },
+    {
+      "item_id": "accrual_calculation",
+      "expected": "Leave balances and daily-rate working paper.",
+      "required": true,
+      "status": "available",
+      "location": "GPAY",
+      "remediation": "Attach the employee-level working that the accrual is calculated on.",
+      "note": "Satisfied by GPAY.",
+      "needs_review": false
+    },
+    {
+      "item_id": "employee_master",
+      "expected": "Employee population, status, and FTE data.",
+      "required": true,
+      "status": "available",
+      "location": "MSPeople",
+      "remediation": "Attach the employee master extract covering the reporting date.",
+      "note": "Satisfied by MSPeople.",
+      "needs_review": false
+    },
+    {
+      "item_id": "approval",
+      "expected": "Approval for the leave accrual.",
+      "required": true,
+      "status": "missing",
+      "location": null,
+      "remediation": "Record the approver and the approval date on the entry.",
+      "note": "No approval was found in the workbook.",
+      "needs_review": false
+    },
+    {
+      "item_id": "vacation_provision_file",
+      "expected": "Vacation provision file supporting this journal entry.",
+      "required": false,
+      "status": "missing",
+      "location": null,
+      "remediation": null,
+      "note": "No vacation provision file was found in the workbook.",
+      "needs_review": false
+    },
+    {
+      "item_id": "provider_screenshot",
+      "expected": "Provider or payroll screenshot evidencing the posted amount.",
+      "required": false,
+      "status": "available",
+      "location": "1 screenshot(s) read",
+      "remediation": null,
+      "note": "Satisfied by 1 screenshot(s) read.",
+      "needs_review": false
+    }
+  ],
+  "report": {
+    "headline": "37.5 out of 100, High risk (provisional). 18 checks ran; 4 failed and 10 need a person.",
+    "summary": "This France vacation accrual review is high risk with a provisional total score of 37.5 because required evidence is incomplete and multiple checks could not be validated. The evidence register shows only 4 of 6 expected evidence layers are present, with approval and vacation_provision_file missing (F-01). Negative accruals are not cleared: 3 employee row(s) carry a negative total_accrual, 1638.20 in total (F-01). Manual update support failed with value_error: 882; typed_over_formula: 5; external_link: 1, and methodology support could not be matched because the methodology tab has no period stamp for period 08 and the stated basis differs from the approved basis (F-01). No personal data was flagged outside where it belongs.",
+    "gaps": [
+      "6 citation(s) for the entry type point at cells that are empty or absent: GPAY!E1, GPAY!AF1, GPAY!AG1, Data Table!H1.",
+      "The second reading agreed on the entry type but cited only the posting tab, which carries the preparer's own labels rather than evidence.",
+      "Population could not be validated because the employee reference column is redacted or constant: 2,280 employee rows carry only 1 distinct reference(s).",
+      "Classification is not final even though 2,244 classified row(s) were checked and 0 carried an amount on the wrong side; the check is marked unable_to_validate and needs a person.",
+      "Salary validation is not final: 778 of 778 employees with an RTT amount carry a usable daily rate, but the workbook carries no independent salary source.",
+      "Leave validation could not be validated because the map is unverified."
+    ],
+    "next_steps": [
+      "Obtain the missing approval evidence and vacation_provision_file.",
+      "Obtain or confirm the independent population source needed to reconcile the 2,280 employee rows.",
+      "Obtain the independent salary source needed to validate daily rates for the 778 employees with an RTT amount.",
+      "Confirm support for the 3 negative total_accrual employee row(s) and the 1638.20 total.",
+      "Obtain support for the formula health exceptions: value_error: 882; typed_over_formula: 5; external_link: 1, and confirm the methodology period stamp and approved leave-type basis for period 08."
+    ],
+    "untraced_numbers": []
+  },
+  "audit": {
+    "versions": {
+      "je_type": "vacation-accrual-france@2#f3c931a7",
+      "rules": "3#259476d5",
+      "harness": "2.0.0-dev"
+    },
+    "file_sha256": "aa014c490cb14a64c2b7c2404863cdd4fc6612cbca8900123c82188338385149",
+    "file_name": "236264.xlsx",
+    "size_bytes": 2972549,
+    "layout_fingerprint": "1c283553c823b6f37de10a4a1bd9efb45274967623b12d831c8b21c3b8b1158a",
+    "reuse_hit": false,
+    "layout_hit": false,
+    "ai_calls": [
+      {
+        "call": "AI-1",
+        "step": "8",
+        "name": "Reading the workbook independently",
+        "model": "gpt-5.5",
+        "input_tokens": 3750,
+        "cached_tokens": 3328,
+        "output_tokens": 299,
+        "reasoning_tokens": 0,
+        "cost_usd": "0.012744",
+        "latency_ms": 5333,
+        "retries": 0,
+        "schema_valid": true
+      },
+      {
+        "call": "AI-M",
+        "step": "13a",
+        "name": "Reading the methodology",
+        "model": "gpt-5.5",
+        "input_tokens": 997,
+        "cached_tokens": 0,
+        "output_tokens": 51,
+        "reasoning_tokens": 0,
+        "cost_usd": "0.006515",
+        "latency_ms": 1854,
+        "retries": 0,
+        "schema_valid": true
+      },
+      {
+        "call": "AI-R",
+        "step": "13a",
+        "name": "Reading the screenshots",
+        "model": "gpt-5.5",
+        "input_tokens": 1362,
+        "cached_tokens": 0,
+        "output_tokens": 45,
+        "reasoning_tokens": 0,
+        "cost_usd": "0.00816",
+        "latency_ms": 2812,
+        "retries": 0,
+        "schema_valid": true
+      },
+      {
+        "call": "AI-X",
+        "step": "13b",
+        "name": "Grouping the exceptions",
+        "model": "gpt-5.5",
+        "input_tokens": 759,
+        "cached_tokens": 0,
+        "output_tokens": 128,
+        "reasoning_tokens": 0,
+        "cost_usd": "0.007635",
+        "latency_ms": 2092,
+        "retries": 0,
+        "schema_valid": true
+      },
+      {
+        "call": "AI-3",
+        "step": "14",
+        "name": "Judging the results",
+        "model": "gpt-5.5",
+        "input_tokens": 3875,
+        "cached_tokens": 0,
+        "output_tokens": 2995,
+        "reasoning_tokens": 350,
+        "cost_usd": "0.109225",
+        "latency_ms": 22672,
+        "retries": 0,
+        "schema_valid": true
+      },
+      {
+        "call": "AI-4",
+        "step": "15",
+        "name": "Challenging the conclusions",
+        "model": "gpt-5.5",
+        "input_tokens": 4434,
+        "cached_tokens": 0,
+        "output_tokens": 1370,
+        "reasoning_tokens": 0,
+        "cost_usd": "0.06327",
+        "latency_ms": 10502,
+        "retries": 0,
+        "schema_valid": true
+      },
+      {
+        "call": "AI-5",
+        "step": "18",
+        "name": "Writing the report",
+        "model": "gpt-5.5",
+        "input_tokens": 2571,
+        "cached_tokens": 0,
+        "output_tokens": 459,
+        "reasoning_tokens": 0,
+        "cost_usd": "0.026625",
+        "latency_ms": 5458,
+        "retries": 0,
+        "schema_valid": true
+      }
+    ],
+    "tool_runs": [],
+    "flags": [
+      "challenge_disagreed",
+      "incomplete_row_coverage",
+      "map_unverified",
+      "negative_accrual",
+      "status_overridden",
+      "untraced_number"
+    ],
+    "total_cost_usd": "0.234174",
+    "total_tokens": 23095,
+    "je_type_confidence": 0.9,
+    "je_type_corroborated": true,
+    "je_type_source": "shape",
+    "duration_ms": 90701
+  },
+  "created_at": "2026-10-22T07:49:56.507616Z",
+  "reused_from": null
+}

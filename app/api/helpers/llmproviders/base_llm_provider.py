@@ -40,8 +40,9 @@ class BaseLLMProvider(ABC):
                 exc.message,
             )
             raise
-        response = self._meter(completion)
-        self._log_metrics(response, self._elapsed_ms(started))
+        elapsed = self._elapsed_ms(started)
+        response = self._meter(completion, elapsed)
+        self._log_metrics(response, elapsed)
         return response
 
     @abstractmethod
@@ -52,7 +53,7 @@ class BaseLLMProvider(ABC):
         vendor failure.
         """
 
-    def _meter(self, completion: LLMCompletion) -> LLMResponse:
+    def _meter(self, completion: LLMCompletion, duration_ms: float) -> LLMResponse:
         cost = CostMeteringUtils.calculate_cost(completion.usage, self.pricing)
         return LLMResponse(
             text=completion.text,
@@ -62,6 +63,7 @@ class BaseLLMProvider(ABC):
             provider=self.PROVIDER,
             model=self.model,
             cost=cost,
+            latency_ms=round(duration_ms),
         )
 
     def _log_metrics(self, response: LLMResponse, duration_ms: float) -> None:
