@@ -582,3 +582,4 @@ Newest first, one line per change. Add a line with every change.
 - 2026-10-18 `7c7517d`: OpenAI LLM providers (gpt-5.5, gpt-4o on Azure AI Foundry), token
   and cost metering, exceptions package, OPENAI_SETTINGS per flavour, `openai==3.24.0`.
 - `47af5c0`: FastAPI skeleton, health endpoint, flavour settings (FLAVOUR dev/stag/prod).
+
