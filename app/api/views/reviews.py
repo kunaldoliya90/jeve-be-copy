@@ -353,11 +353,14 @@ def _detail(run: ReviewRun) -> ReviewDetail:
         detail = detail.model_copy(
             update={"evidence": [EvidenceView.of(item) for item in run.context.evidence_register]}
         )
+    if run.split_summary is not None:
+        # The same object step 20 stored, so the live view and a re-read of the record can
+        # never report the split differently.
+        detail = detail.model_copy(update={"split_summary": run.split_summary})
     if run.report is not None:
         detail = detail.model_copy(
             update={
                 "summary": run.report.summary,
-                "gaps": list(run.report.gaps),
                 "next_steps": list(run.report.next_steps),
                 "untraced_numbers": list(run.report.untraced_numbers),
             }

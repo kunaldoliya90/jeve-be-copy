@@ -41,6 +41,16 @@ a routing rule.
   Each is single-shot, strictly schema-bound, and validated by a guardrail before its answer
   reaches a report. With no key the arithmetic runs in full and the result names what was
   not judged.
+- Step 18 also assembles a **category split work paper**: the working re-added row by row and
+  divided by the classes its own classification column holds, each column tied against the
+  total the file states above its header, the formula behind each column rewritten in the
+  preparer's column names, one row traced, and every check reported with the status step 16
+  gave it. Arithmetic and projection only - no model contributes a figure, and the tests
+  section is carried rather than recomputed. Nothing in it is named in code: row titles are
+  the preparer's headers, categories are whatever the column holds, and figures are formatted
+  from Excel's own format string, so a workbook with different classes on a differently
+  shaped tab needs no edit. It is written with the record, because its arithmetic is the
+  evidence.
 - Business knowledge is versioned YAML in `review/context/`, SHA-hashed into every review's
   audit trail and reuse key, so no stored result is served across a rule change.
 - Every model call is metered and recorded against the numbered step that made it, so

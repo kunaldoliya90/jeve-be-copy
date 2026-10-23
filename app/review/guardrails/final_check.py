@@ -44,7 +44,7 @@ def final_check(
 ) -> ReportPayload:
     """Return the report with any untraced numbers named on it."""
     allowed = _traceable(score, evidence_pack, outcomes or {})
-    prose = " ".join([report.summary, *report.gaps, *report.next_steps])
+    prose = " ".join([report.summary, *report.next_steps])
 
     untraced: list[str] = []
     for match in _NUMBER.findall(prose):

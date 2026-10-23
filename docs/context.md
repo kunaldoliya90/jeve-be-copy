@@ -63,7 +63,8 @@ app/
                         ReviewSummary, WorkbookView, AreaView (+status), CheckView,
                         EvidenceView.of(), AICallCostView.of(), CostView (+calls),
                         ErrorResponse, area_status(), stored_check(). snake_case end to
-                        end; separate from review/models/ on purpose
+                        end; separate from review/models/ on purpose - except
+                        split_summary, which is carried as the harness model
       llm_models.py     LLMPricing (USD per 1M tokens), LLMRequest (input, instructions,
                         reasoning_effort, max_output_tokens), TokenUsage, LLMCost,
                         LLMCompletion (text, usage, response_id, incomplete_reason),
@@ -177,6 +178,14 @@ app/
       diagnosis.py      diagnose(): the report a review gets when nothing could be checked
                         - which candidate the shape ruled out, which table could not be
                         bound and with which column spellings, and what to do next
+      split_summary.py  step 18's work paper: build_split_summary() re-adds the working and
+                        divides it by the classes its own classification column holds, ties
+                        each component against the total the file states above its header,
+                        reads the formula behind each column, traces the first row and the
+                        exception rows, and carries the checks' own results. Names no row
+                        title, column title or category anywhere. resolve_references()
+                        rewrites a formula with each reference replaced by that column's
+                        header: a substitution, never a translation
       planner.py        step 11: plan_from_recipes() for every check that states one;
                         propose_steps() asks AI-2 only about checks with no recipe, and a
                         step for any other check is discarded
@@ -213,6 +222,9 @@ app/
                         EvidenceStatus, PictureReading, PIIFinding, PIIKind
       verdicts.py       Status + strictness()/stricter(), ReviewFlag, Finding, Verdict,
                         Challenge, CheckOutcome
+      split_summary.py  SplitBasis, CategoryRef, ComponentSplit (+.shares), SplitTieOut,
+                        DerivedRule, WalkStep, RowWalkthrough, ExceptionTest, SplitSummary:
+                        the work paper, written with the record and served with it
       result.py         ScoringMethod, AreaScore, Score, ReportPayload, EntryIdentity,
                         AICallRecord (+step, name, model), ToolRunRecord, AuditTrail,
                         ReviewResult (+entry)
@@ -403,6 +415,55 @@ These are the user's choices. They override the guidelines; do not flag them in 
 - `AreaView.status` is the strictest status among an area's checks, carried alongside the
   score rather than inferred from it. An exception-rate area with three bad rows in forty
   thousand scores in the nineties and still contains a failure.
+- The category split work paper (`orchestrator/split_summary.py`, step 18) is the arithmetic
+  a reviewer reads: what the entry's value is composed of, how it divides by the classes the
+  workbook's own classification column holds, the totals the file states above its data
+  against a re-add of the rows beneath them, the formula behind each column, one row traced,
+  and what each test found. Four decisions hold it together.
+  It is **not a tool**. A `Figure` is one measurement, an `ok` and an allowlist of quotable
+  numbers; a 24-column matrix pushed through a figure's exemplars would be capped by the
+  sample limit and read by every guardrail as evidence for a conclusion nobody drew. It sits
+  beside `diagnosis.py` instead, as a report step 18 assembles.
+  Its tests section is **carried**, never recomputed - the statuses are the ones step 16
+  reached. Same rule as the evidence register, same reason: a second opinion assembled
+  upstream is how a report comes to disagree with the check it reports on.
+  Nothing in it is **named in code**. Row titles are the headers the preparer wrote, column
+  letters come from the verified map, categories are whatever the classification column
+  holds, and the number formatting is Excel's own format string. The 37,613-row `.xlsb` on a
+  tab called DENT, with a quarter of the columns and different classes, produces a correct
+  work paper with no edit - which is what the golden tests pin.
+  A control total is identified by **being the same quantity** as the column above it: the
+  nearest number above the header that ties, or is within `CONTROL_TOTAL_MAX_DRIFT` of, that
+  column's re-add. The header band of a real working also holds rates and per-unit figures,
+  and the earlier nearest-number rule reported two of those as failed tie-outs - a confident
+  false finding, which is worse than not finding the total at all.
+- A numeric column Excel left on `General` holding only whole numbers is a **code**, not a
+  quantity, and is left out of the split. Every real amount and day count in these workbooks
+  carries an explicit format because somebody meant it read as money or as days; on the
+  sample files exactly one column fails both tests, and it is the SAP company code, whose
+  sum is 2,633,130 and means nothing. Both conditions are required - a General column with a
+  fraction in it is a quantity somebody forgot to format. A format of `None` is *unreadable*
+  rather than General, because the binary reader exposes no cell formats at all, and there
+  the signal is the preparer's own control total instead: somebody totals a quantity and
+  nobody totals a code. That separates the `.xlsb`'s nine numeric columns exactly. Reading
+  unknown as General dropped two whole-number quantity columns from it; reading it as a
+  quantity put a cost-centre code summing to 394 *billion* on an audit work paper.
+- The work paper's totals are over **classified rows only**, so the split always visibly adds
+  up to the total beside it. A profiled block ends at a run of blank rows and so reaches past
+  the last record into the preparer's own subtotal rows - on one sample file a trailing row
+  holds the entire entry a second time. Those rows are neither summed nor reported as records
+  that failed to classify: `rows_read` against `rows_total` is where the gap is stated.
+- `RowWalkthrough` shows amounts against a **row number and nothing else**. This is the one
+  place the harness shows per-row values rather than cell references, and it is deliberate:
+  a trace without amounts traces nothing, and tracing one employee's arithmetic is the
+  evidence a reviewer is being shown. Identifying columns are excluded twice - by the meaning
+  the map bound them to, and by being distinct on nearly every row, so a spelling the alias
+  table has never seen still fails closed. No name, no personnel reference, ever.
+- `ReviewDetail.split_summary` carries the harness model rather than a parallel set of nine
+  view classes. Every field on it is already a reader's field - headers, column letters,
+  amounts, row numbers - and nine identical classes in `api/pydanticmodels/` would be the
+  mapping layer that hides drift rather than preventing it. It is the one exception to the
+  separation above, and the reason is on the field.
 - A re-read of a stored review is deliberately thinner than the live view. Figures are working
   memory and are not persisted, so each check comes back with its status and no conclusion;
   the questions are restored from the versioned JE type file, which is context rather than run
@@ -437,6 +498,35 @@ These are the user's choices. They override the guidelines; do not flag them in 
 ## Log
 
 Newest first, one line per change. Add a line with every change.
+
+- 2026-10-23: the arithmetic a reviewer reads. New `orchestrator/split_summary.py` and
+  `models/split_summary.py`: at step 18 the working is re-added row by row and divided by
+  the classes its own classification column holds, each component is tied against the total
+  the file states above its header, the formula behind each column is read and rewritten in
+  the preparer's column names, one row is traced step by step, and every check that ran is
+  reported with the status step 16 gave it. Persisted on `ReviewResult` and served as
+  `ReviewDetail.split_summary`; a `step_finished` event announces it. Frontend: a new
+  numbered section, `Recalculation.tsx`, with `lib/excelFormat.ts` rendering each figure from
+  Excel's own format string - so an accounting negative keeps its brackets and an accounting
+  zero stays a dash - and `ReviewResult` now hands out section numbers in reading order,
+  which also fixes a spine that skipped 4 whenever the evidence register was empty. Nothing
+  is labelled in code: the 37,613-row `.xlsb` on a tab called DENT produces a correct work
+  paper with no edit. Found and fixed against the three real workbooks and one live upload:
+  the SAP company code was being summed to 2,633,130 (now excluded as a code by its General
+  format), a trailing subtotal row was doubling the TOTAL ACCRUAL column, two rates in the
+  header band were reported as failed control totals, the matrix headers computed their
+  accessible name as "FTE2,193 rows", and all five traced exception rows came from the one
+  check that had 1,096 of them (now at most one row per check, so the traced rows span the
+  causes), and on the `.xlsb` - which exposes no cell formats - the General test dropped two
+  whole-number quantity columns while its naive inverse printed a 394-billion cost-centre
+  code, so an unreadable format now falls back to whether the preparer totalled the column.
+  Two pre-existing defects fell out of the renumbering: the spine printed 1, 2, 4
+  whenever a review had nothing scored, and `ReviewResult`'s own spine test read `aria-label`
+  on sections named by `aria-labelledby`, so it had been comparing an empty list to an empty
+  list. Verified live against 305800.xlsx end to end: 9 model calls, $0.26, 2,273 rows
+  re-added into 3 classes and 32 components, 15 of 15 control totals agreeing to the cent,
+  18 tests carried with the statuses step 16 gave them, 3 rows traced. 578 backend tests,
+  231 frontend tests, 15 golden assertions on all three workbooks, ruff/mypy/eslint clean.
 
 - 2026-10-22 (3): em dashes removed from everything a reader sees. Four runtime strings
   carried one into the UI: the headline in `summary.py` and its stored twin in

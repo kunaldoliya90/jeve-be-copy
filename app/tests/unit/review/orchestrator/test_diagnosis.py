@@ -47,15 +47,15 @@ def _binding(
 def test_diagnose_names_every_candidate_the_shape_ruled_out() -> None:
     report = diagnose(_binding(), PROFILE, catalogue=CATALOGUE)
 
-    assert any("cp_rtt_france" in gap and "cp_provision" in gap for gap in report.gaps)
-    assert any("ms_vacation_global" in gap for gap in report.gaps)
+    assert any("cp_rtt_france" in step and "cp_provision" in step for step in report.next_steps)
+    assert any("ms_vacation_global" in step for step in report.next_steps)
 
 
 def test_diagnose_names_the_columns_that_would_have_bound_a_missing_table() -> None:
     """A reviewer cannot act on 'calculation is unbound'; they can act on which columns."""
     report = diagnose(_binding(), PROFILE, catalogue=CATALOGUE)
 
-    calculation = next(gap for gap in report.gaps if "'calculation'" in gap)
+    calculation = next(step for step in report.next_steps if "'calculation'" in step)
     assert "employee_ref" in calculation
     assert "'matricule'" in calculation, "the spellings it already knows, as examples"
 
@@ -65,15 +65,27 @@ def test_diagnose_lists_the_headers_that_matched_no_meaning() -> None:
         _binding(unresolved=("Jours Acquis", "Taux Horaire")), PROFILE, catalogue=CATALOGUE
     )
 
-    assert any("'Jours Acquis'" in gap and "'Taux Horaire'" in gap for gap in report.gaps)
+    assert any("'Jours Acquis'" in step and "'Taux Horaire'" in step for step in report.next_steps)
     assert any("different names" in step for step in report.next_steps)
 
 
 def test_diagnose_tells_an_uploader_who_named_no_type_to_name_one() -> None:
     report = diagnose(_binding(), PROFILE, declared=None, catalogue=CATALOGUE)
 
-    assert "vacation-accrual-france" in report.next_steps[0]
-    assert "unconfirmed" in report.next_steps[0], "and that it will not read as a clean pass"
+    advice = next(step for step in report.next_steps if "Upload again" in step)
+    assert "vacation-accrual-france" in advice
+    assert "unconfirmed" in advice, "and that it will not read as a clean pass"
+
+
+def test_diagnose_states_the_obstacle_before_the_instruction() -> None:
+    """A reader told to add a header spelling has to know which header went unrecognised."""
+    report = diagnose(
+        _binding(unresolved=("Jours Acquis",)), PROFILE, declared=None, catalogue=CATALOGUE
+    )
+
+    findings = next(i for i, step in enumerate(report.next_steps) if "'Jours Acquis'" in step)
+    instructions = next(i for i, step in enumerate(report.next_steps) if "different names" in step)
+    assert findings < instructions
 
 
 def test_diagnose_says_so_when_the_declared_type_is_not_in_the_catalogue() -> None:

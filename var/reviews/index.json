@@ -9,14 +9,14 @@
     "provisional": true,
     "created_at": "2026-10-22T07:49:56.507616+00:00"
   },
-  "rev_20261022T171608_aa4586c5": {
-    "review_id": "rev_20261022T171608_aa4586c5",
+  "rev_20261023T015939_8037f99f": {
+    "review_id": "rev_20261023T015939_8037f99f",
     "file_name": "305800.xlsx",
     "je_type": "vacation-accrual-france",
     "status": "needs_review",
     "score": 32.5,
     "band": "High risk",
     "provisional": true,
-    "created_at": "2026-10-22T17:16:08.400403+00:00"
+    "created_at": "2026-10-23T01:59:39.718366+00:00"
   }
 }
