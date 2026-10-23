@@ -5,7 +5,14 @@ from typing import ClassVar
 from pydantic_settings import SettingsConfigDict
 
 from core.settings.base import BaseConfig
-from core.settings.consts import DOTENV_ENCODING, DOTENV_FILE, Flavour, LogLevel, OpenAISettings
+from core.settings.consts import (
+    DOTENV_ENCODING,
+    DOTENV_FILE,
+    CorsOrigins,
+    Flavour,
+    LogLevel,
+    OpenAISettings,
+)
 
 
 class DevelopmentConfig(BaseConfig):
@@ -17,6 +24,7 @@ class DevelopmentConfig(BaseConfig):
 
     DEBUG: bool = True
     LOG_LEVEL: LogLevel = LogLevel.DEBUG
+    CORS_ORIGINS: CorsOrigins = ("http://localhost:5173", "http://127.0.0.1:5173")
     DOCS_URL: str | None = "/docs"
     REDOC_URL: str | None = "/redoc"
     OPENAPI_URL: str | None = "/openapi.json"

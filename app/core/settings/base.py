@@ -5,7 +5,15 @@ from typing import Any, ClassVar
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from core.settings.consts import API_PREFIX_PATTERN, ENV_PREFIX, LOG_FORMAT, Flavour, LogLevel
+from core.settings.consts import (
+    API_PREFIX_PATTERN,
+    CORS_ORIGIN_SEPARATOR,
+    ENV_PREFIX,
+    LOG_FORMAT,
+    CorsOrigins,
+    Flavour,
+    LogLevel,
+)
 
 
 class BaseConfig(BaseSettings):
@@ -24,6 +32,12 @@ class BaseConfig(BaseSettings):
     APP_NAME: str = "jeve-be"
     API_PREFIX: str = Field(default="/api/jeve", pattern=API_PREFIX_PATTERN)
     LOG_LEVEL: LogLevel = LogLevel.INFO
+
+    # Browser origins allowed to call the API. Empty means no CORS headers are sent at
+    # all, which is the right default for a service with no browser client: a deployment
+    # names its frontend instead, as a comma-separated list in APP_CORS_ORIGINS. Each
+    # entry is a scheme and host, never a path ("https://app.example.com").
+    CORS_ORIGINS: CorsOrigins = ()
 
     # API documentation, served under API_PREFIX. None disables it.
     DOCS_URL: str | None = None
@@ -47,6 +61,20 @@ class BaseConfig(BaseSettings):
     @property
     def MAX_UPLOAD_BYTES(self) -> int:
         return self.MAX_UPLOAD_MB * 1024 * 1024
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def _split_cors_origins(cls, value: object) -> object:
+        """Accept ``a,b`` from the environment: a JSON list is a poor thing to type by hand.
+
+        ``NoDecode`` on the field is what leaves the raw string to be split here; without
+        it pydantic-settings would try to JSON-decode it and fail before validation.
+        """
+        if isinstance(value, str):
+            return tuple(
+                origin.strip() for origin in value.split(CORS_ORIGIN_SEPARATOR) if origin.strip()
+            )
+        return value
 
     @field_validator("LOG_LEVEL", mode="before")
     @classmethod

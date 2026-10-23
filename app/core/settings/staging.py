@@ -3,7 +3,7 @@
 from typing import ClassVar
 
 from core.settings.base import BaseConfig
-from core.settings.consts import Flavour, OpenAISettings
+from core.settings.consts import CorsOrigins, Flavour, OpenAISettings
 
 
 class StagingConfig(BaseConfig):
@@ -14,6 +14,8 @@ class StagingConfig(BaseConfig):
     DOCS_URL: str | None = "/docs"
     REDOC_URL: str | None = "/redoc"
     OPENAPI_URL: str | None = "/openapi.json"
+
+    CORS_ORIGINS: CorsOrigins = ("https://jeve-fe-copy-rouge.vercel.app",)
 
     OPENAI_SETTINGS: OpenAISettings = {
         "BASE_URL": "https://openai-compliance-tool.services.ai.azure.com/openai/v1",

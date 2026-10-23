@@ -25,7 +25,8 @@ starts from here.
 
 ```text
 app/
-  app.py                FastAPI app; router mounted at config.API_PREFIX (/api/jeve)
+  app.py                FastAPI app; router mounted at config.API_PREFIX (/api/jeve);
+                        CORSMiddleware added only when config.CORS_ORIGINS names an origin
   applifespan.py        startup: dictConfig(config.LOGGING_CONFIG); shutdown log
   main.py               typer CLI: python app/main.py runserver
   core/
@@ -36,15 +37,17 @@ app/
       __init__.py       get_settings(): FLAVOUR env (dev|stag|prod, unknown -> error) picks
                         the class; `config` singleton; AppConfig = Dev | Stag | Prod
       base.py           BaseConfig (APP_ env prefix, frozen): DEBUG, APP_NAME, API_PREFIX,
-                        LOG_LEVEL, DOCS/REDOC/OPENAPI_URL, LOGGING_CONFIG, and the six
+                        LOG_LEVEL, CORS_ORIGINS (comma-separated in the env, read by app.py),
+                        DOCS/REDOC/OPENAPI_URL, LOGGING_CONFIG, and the six
                         review limits (MAX_UPLOAD_MB, MAX_ACTIVE_REVIEWS, TOOL_WORKERS,
                         REVIEW_DEADLINE_S, STRUCTURE_CONTEXT_MAX_TOKENS, FIGURE_SAMPLES),
                         every one of them read by applifespan. Service-agnostic
-      development.py    debug, docs, reads ./.env, OPENAI_SETTINGS
-      staging.py        docs on, OPENAI_SETTINGS
-      production.py     DEBUG locked False, OPENAI_SETTINGS
+      development.py    debug, docs, localhost CORS origins, reads ./.env, OPENAI_SETTINGS
+      staging.py        docs on, deployed CORS origin, OPENAI_SETTINGS
+      production.py     DEBUG locked False, deployed CORS origin, OPENAI_SETTINGS
       consts.py         Flavour, LogLevel, OpenAISettings TypedDict (BASE_URL,
-                        API_KEY: SecretStr | None, TIMEOUT_SECONDS), env constants
+                        API_KEY: SecretStr | None, TIMEOUT_SECONDS), CorsOrigins alias and
+                        the CORS_* middleware constants, env constants
   api/
     consts.py           ApiPath, ApiTag, HealthStatus, RiskRating (an upload input),
                         ErrorCode, LLMProviderName, OpenAIModel (GPT_5_5="gpt-5.5",
@@ -245,7 +248,7 @@ app/
                         what crossed the boundary, so judging and reporting are assertable
     unit/               mirrors app/ (api, core, review/models, intake, extract, context,
                         agents, guardrails, orchestrator, tools, utils)
-    integration/        health and the whole review flow through TestClient
+    integration/        health, CORS headers, and the whole review flow through TestClient
     golden/             steps 2-6 against the real workbooks in skills/docs (@pytest.mark.
                         golden, ~50s). Known gaps are strict xfails, so fixing one fails the
                         suite until its marker goes
@@ -304,6 +307,14 @@ These are the user's choices. They override the guidelines; do not flag them in 
 - The shared AsyncOpenAI client is not created in `applifespan.py` yet. The first endpoint
   that uses an LLM adds it there: call `create_client()` once and close it on shutdown.
   Until then the app starts without an API key.
+- CORS is a setting, not a middleware decision: `CORS_ORIGINS` is empty on BaseConfig and
+  named by each flavour, and `app.py` adds `CORSMiddleware` only when it holds something.
+  An empty `allow_origins` list would still answer every preflight, with a 400. The
+  environment overrides it as a comma-separated string, not JSON (`NoDecode` on the field
+  plus a `mode="before"` validator), because it is typed by hand into a deployment
+  dashboard; the alias carrying `NoDecode` lives in `settings/consts.py` so a flavour that
+  overrides the field cannot silently put JSON decoding back. `allow_credentials` is on,
+  which is why the origins are named rather than `*`.
 - Keep changes small: no speculative state, layers or files. The user prunes them.
 - Every setting on BaseConfig has a reader. `applifespan.py` is the only module that reads
   `config` for the harness; the six review limits are required keywords on
@@ -498,6 +509,16 @@ These are the user's choices. They override the guidelines; do not flag them in 
 ## Log
 
 Newest first, one line per change. Add a line with every change.
+
+- 2026-10-23 (2): the deployed frontend can reach the API. The app had no CORS middleware
+  at all, so every call from the Vercel origin failed the preflight ("No
+  'Access-Control-Allow-Origin' header is present"), including the upload, the listing, the
+  delete and the SSE stream. New `CORS_ORIGINS` setting (empty on BaseConfig, localhost in
+  dev, the deployed frontend in stag and prod, overridable as `APP_CORS_ORIGINS=a,b`) and
+  `CORSMiddleware` in `app.py`, added only when an origin is configured. The frontend's
+  `POST /api/auth/refresh` 404 is not CORS and is not this service: no auth endpoint exists
+  here, by design. 4 integration tests on the preflight and the allow-origin header, 3 unit
+  tests on the setting.
 
 - 2026-10-23: the arithmetic a reviewer reads. New `orchestrator/split_summary.py` and
   `models/split_summary.py`: at step 18 the working is re-added row by row and divided by

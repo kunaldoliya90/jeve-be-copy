@@ -7,7 +7,9 @@ write code in it is in [coding-guidelines.md](coding-guidelines.md).
 
 - `app/app.py` creates the FastAPI instance (`uvicorn app:app`, run from `app/`) and
   mounts `api.views.router` under `API_PREFIX` (`/api/jeve`). API docs are served under the
-  same prefix when `DOCS_URL` / `REDOC_URL` / `OPENAPI_URL` are set.
+  same prefix when `DOCS_URL` / `REDOC_URL` / `OPENAPI_URL` are set. It also adds
+  `CORSMiddleware` when `CORS_ORIGINS` names at least one browser origin, and leaves it off
+  entirely when none is configured.
 - `app/applifespan.py` runs on startup and shutdown: it applies `config.LOGGING_CONFIG`,
   then validates every context YAML and prompt and builds the review store, orchestrator and
   LLM provider once. A malformed business rule stops the service starting rather than
@@ -73,6 +75,9 @@ app/core/settings/
 - `FLAVOUR` comes from the process environment (default `dev`); an unknown value stops
   startup. The stag/prod images set it, and the deployment can override it.
 - Fields are UPPER_CASE and overridable with `APP_<FIELD>` variables; settings are frozen.
+- `CORS_ORIGINS` is the one list field read from the environment as a comma-separated
+  string rather than JSON (`NoDecode` plus a validator), because it is typed by hand into a
+  deployment's dashboard. Each flavour names its own frontend; the base default is empty.
 - The harness reads `config` in one place, `applifespan.py`, which passes every review
   limit into the orchestrator as a required keyword. Nothing under `app/review/` imports
   `config`, and no limit has a default there to drift from the field it mirrors.
