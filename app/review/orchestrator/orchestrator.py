@@ -13,7 +13,7 @@ a review tool to mislead.
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -61,6 +61,7 @@ from review.models.evidence import (
     PictureReading,
 )
 from review.models.plan import ExecutionPlan, PlanStep
+from review.models.recalculation import EntryRecalculation
 from review.models.result import (
     AICallRecord,
     AuditTrail,
@@ -76,14 +77,22 @@ from review.models.verdicts import Challenge, CheckOutcome, Verdict, strictness
 from review.models.workbook import WorkbookProfile
 from review.models.workbook_data import WorkbookData
 from review.orchestrator.diagnosis import diagnose
-from review.orchestrator.planner import merge, plan_from_recipes, propose_steps, unplanned
+from review.orchestrator.planner import (
+    merge,
+    plan_from_recipes,
+    propose_steps,
+    split_out,
+    unplanned,
+)
 from review.orchestrator.rules import outcome_for
 from review.orchestrator.runner import run_checks
 from review.orchestrator.scoring import score_review
 from review.orchestrator.split_summary import build_split_summary
 from review.storage.reviews import ReviewStore, utc_now
-from review.tools.base import ToolContext
+from review.tools.base import ToolContext, assign_figure_ids
 from review.tools.entry import EvidenceRegisterTool, PeriodAgreementTool
+from review.tools.recalculation import TOOL_NAME as RECALC_TOOL
+from review.tools.recalculation import run_recalculation
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +183,9 @@ class ReviewRun:
     split_summary: SplitSummary | None = None
     """The category split work paper, assembled at step 18. Held on the run so the live
     view serves the same object the stored record carries."""
+    recalculation: EntryRecalculation | None = None
+    """The entry recalculation work paper, from step 13c. Held for the same reason: the
+    live view and a re-read of the record must never report the entry differently."""
     layout_key: str = ""
     layout_hit: bool = False
     je_type: JETypeContext | None = None
@@ -219,6 +231,7 @@ _STEP_WEIGHT: Final[dict[str, int]] = {
     "12": 76,
     "13a": 77,
     "13": 78,
+    "13c": 80,
     "13b": 82,
     "14": 88,
     "15": 93,
@@ -253,6 +266,7 @@ _STEP_ORDER: Final[tuple[str, ...]] = (
     "12",
     "13a",
     "13",
+    "13c",
     "13b",
     "14",
     "15",
@@ -715,11 +729,19 @@ class ReviewOrchestrator:
             methodology=je_spec.methodology,
             methodology_read=reading,
             picture_readings=readings,
+            # The approved formula reaches the tool here rather than through the plan: a
+            # tool argument is a column or a table, never a methodology, and a basis that
+            # travelled in the plan could be chosen by whatever wrote the plan.
+            je_type_args={"recalculation": je_spec.recalculation},
             figure_samples=self._figure_samples,
         )
+        # The entry recalculation is lifted out and run as step 13c. It produces a work
+        # paper as well as figures, and it is the one check a person waiting on the review
+        # should see named - on the widest workbook it is 37,613 records being rebuilt.
+        recalc_steps, tool_plan = split_out(checked.plan, RECALC_TOOL)
         pack = await loop.run_in_executor(
             None,
-            partial(run_checks, checked.plan, tool_ctx, max_workers=self._tool_workers),
+            partial(run_checks, tool_plan, tool_ctx, max_workers=self._tool_workers),
         )
         run.context.evidence_pack = pack
         run.context.evidence_register = _evidence_register(pack, je_spec)
@@ -734,6 +756,11 @@ class ReviewOrchestrator:
                 "figures": sum(len(figures) for figures in pack.values()),
             },
         )
+
+        # --- step 13c: rebuild the entry from the inputs the business approved ---
+        if recalc_steps:
+            pack = await self._recalculate(run, recalc_steps, tool_ctx, pack)
+            run.context.evidence_pack = pack
 
         # --- step 13b: too many exceptions to read as a list, so group them by cause ---
         clusters: dict[str, tuple[ExceptionCluster, ...]] = {}
@@ -943,6 +970,74 @@ class ReviewOrchestrator:
             },
         )
 
+    async def _recalculate(
+        self,
+        run: ReviewRun,
+        steps: Sequence[PlanStep],
+        ctx: ToolContext,
+        pack: dict[str, tuple[Figure, ...]],
+    ) -> dict[str, tuple[Figure, ...]]:
+        """Step 13c. Rebuild the entry from the approved formula, and report what that found.
+
+        In the executor because it walks every record of the working: the widest sample
+        workbook is 37,613 rows, and the event loop has a progress stream to serve while
+        that happens. The work paper is held on the run and stored with the record; the
+        figures go into the evidence pack, so the check reaches its status at step 16
+        through the same routing rules as every other check and needs no special case there.
+        """
+        basis = ctx.je_type_args.get("recalculation")
+        rows = _records_in(ctx, steps[0].args.get("table") or getattr(basis, "table", ""))
+        await self._step(
+            run,
+            "13c",
+            "Rebuilding the entry from its inputs",
+            detail={"rows": rows, "checks": len(steps)},
+        )
+        loop = asyncio.get_running_loop()
+        merged = dict(pack)
+
+        for step in steps:
+            paper, figures = await loop.run_in_executor(
+                None,
+                partial(
+                    run_recalculation,
+                    ctx,
+                    ctx.je_type_args.get("recalculation"),
+                    step.check_id,
+                    **step.args,
+                ),
+            )
+            merged[step.check_id] = assign_figure_ids(figures)
+            if paper is not None and run.recalculation is None:
+                run.recalculation = paper
+
+        paper = run.recalculation
+        await self._emit(
+            run,
+            SSEEvent.STEP_FINISHED,
+            step="13c",
+            name="Rebuilding the entry from its inputs",
+            detail=(
+                {
+                    "sheet": paper.basis.sheet,
+                    "formula": paper.basis.formula_in_headers or paper.basis.formula,
+                    "rows": paper.rows_total,
+                    "rows_recomputed": paper.rows_recomputed,
+                    "recomputed": str(paper.recomputed_total),
+                    "booked": None if paper.booked.total is None else str(paper.booked.total),
+                    "difference": None if paper.difference is None else str(paper.difference),
+                    "difference_pct": paper.difference_pct,
+                    "within_tolerance": paper.within_tolerance,
+                    "status": paper.status.value,
+                    "citations": paper.citation_count,
+                    "duration_ms": paper.duration_ms,
+                }
+                if paper is not None
+                else {"status": "unable_to_validate", "rows": rows}
+            ),
+        )
+        return merged
+
     async def _read_methodology(
         self, run: ReviewRun, data: WorkbookData, sheet_map: SheetMap
     ) -> MethodologyReading | None:
@@ -1099,6 +1194,7 @@ class ReviewOrchestrator:
             checks=tuple(outcomes.values()),
             evidence_register=run.context.evidence_register,
             split_summary=run.split_summary,
+            recalculation=run.recalculation,
             report=run.report or ReportPayload(headline=_headline_for(run)),
             audit=AuditTrail(
                 versions=dict(run.context.versions),
@@ -1176,10 +1272,22 @@ class ReviewOrchestrator:
             },
         )
 
-    async def _step(self, run: ReviewRun, step: str, name: str) -> None:
+    async def _step(
+        self,
+        run: ReviewRun,
+        step: str,
+        name: str,
+        detail: dict[str, str | int | float | bool | None] | None = None,
+    ) -> None:
+        """Announce a step as it starts.
+
+        ``detail`` is for the few steps where what is *about* to happen is worth saying -
+        the entry recalculation says how many records it is rebuilding, because on the
+        widest workbook that is the one step a reader can see taking time.
+        """
         run.step = step
         run.progress_pct = _STEP_WEIGHT.get(step, run.progress_pct)
-        await self._emit(run, SSEEvent.STEP_STARTED, step=step, name=name)
+        await self._emit(run, SSEEvent.STEP_STARTED, step=step, name=name, detail=detail)
 
     async def _emit(
         self,
@@ -1400,6 +1508,18 @@ _FACT_LABELS: Final[dict[str, str]] = {
     "hash total": "hash_total",
     "je total": "je_total",
 }
+
+
+def _records_in(ctx: ToolContext, table: object) -> int:
+    """How many rows the recalculation is about to walk, for the line a reader sees first.
+
+    The block's own row count, not a record count: counting records means reading the key
+    column, which is the pass itself. An approximation announced before the work and the
+    exact figure reported after it is the honest way round. Zero where the table cannot be
+    found at all, and the line then simply names the step.
+    """
+    ref = ctx.sheet_map.tables.get(table) if isinstance(table, str) and table else None
+    return ref.last_row - ref.first_row + 1 if ref is not None else 0
 
 
 def _read_facts(data: WorkbookData) -> dict[str, object]:

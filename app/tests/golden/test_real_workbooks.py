@@ -20,10 +20,14 @@ from review.context.binder import bind_sheet_map
 from review.context.loader import ContextLoader
 from review.extract.structure_context import build_structure_context, layout_fingerprint
 from review.intake.gatekeeper import validate_upload
+from review.models.recalculation import EntryRecalculation
 from review.models.split_summary import SplitSummary
+from review.models.verdicts import Status
 from review.models.workbook import WorkbookProfile
 from review.models.workbook_data import WorkbookData
 from review.orchestrator.split_summary import build_split_summary
+from review.recalc.engine import recalculate
+from review.tools.base import ToolContext
 from tests.golden.conftest import SAMPLES
 
 pytestmark = pytest.mark.golden
@@ -412,3 +416,142 @@ def test_the_traced_row_carries_no_employee_identifier(
     for walk in paper.walkthroughs:
         shown = {header.casefold() for header, _ in walk.context}
         assert not shown & {"matricule", "salari", "nom", "name", "employee"}, shown
+
+
+# ------------------------------------------- step 13c: the entry, rebuilt from its inputs
+
+
+BOOKED = {
+    "236264.xlsx": Decimal("28672591.24"),
+    "305800.xlsx": Decimal("27905812.64"),
+    "935348.xlsb": Decimal("8435498474.10"),
+}
+"""What each entry actually posts, summed from the debit side of its own posting tab.
+
+Read off the files. These are also, to the cent, what the approved formula rebuilds from the
+employee rows of three differently laid out workings - two French GPAY sheets a row apart and
+a global model on a tab called DENT with a quarter of the columns. Nothing about any of the
+three is configured anywhere, which is the property this section exists for.
+"""
+
+
+def _recalculation(
+    name: str,
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> EntryRecalculation:
+    data, measured = sample_data(name), sample_profile(name)
+    loader = ContextLoader()
+    loader.load()
+    binding = bind_sheet_map(measured, data, loader.by_precedence())
+    spec = loader.je_type(JE_TYPE).recalculation
+    assert spec is not None, "the entry type must state an approved formula"
+    ctx = ToolContext(
+        data=data,
+        sheet_map=binding.sheet_map,
+        rules=loader.rules,
+        je_type_args={"recalculation": spec},
+    )
+    return recalculate(ctx, spec)
+
+
+@pytest.mark.parametrize("name", ALL)
+def test_the_entry_rebuilds_to_the_amount_that_was_posted(
+    name: str,
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    """The measure of the whole feature: three real entries, regenerated to the cent.
+
+    The recomputed side is the approved formula over every employee row of the working; the
+    booked side is the debit total of the posting tab. Two independent readings of two
+    different tables, and they agree exactly on all three files.
+    """
+    paper = _recalculation(name, sample_data, sample_profile)
+
+    assert paper.recomputed_total == BOOKED[name]
+    assert paper.booked.total == BOOKED[name]
+    assert paper.difference == Decimal("0.00")
+    assert paper.within_tolerance is True
+    assert paper.status is Status.PASS
+    assert paper.citation_count == 0
+
+
+@pytest.mark.parametrize("name", ALL)
+def test_every_employee_row_is_rebuilt_and_none_is_assumed(
+    name: str,
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    """The same record count the re-performance engine and the split work paper reach."""
+    paper = _recalculation(name, sample_data, sample_profile)
+
+    assert paper.rows_total == CALCULATION_ROWS[name]
+    assert paper.rows_recomputed == CALCULATION_ROWS[name]
+    assert paper.rows_agreeing == CALCULATION_ROWS[name]
+    assert paper.rows_incomplete == 0
+    assert paper.complete is True
+    assert paper.basis.sheet == CALCULATION_TAB[name]
+
+
+@pytest.mark.parametrize("name", XLSX)
+def test_the_leave_leg_re_performs_from_days_and_a_daily_rate(
+    name: str,
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    """The one leg of these entries that can be rebuilt from first principles, and it ties.
+
+    Remaining RTT days times the daily salary rate reproduces the workbook's own RTT accrual
+    on every row of both French periods. The binary workbook carries neither column, which is
+    why it is not in this list: there the work paper says so instead of claiming agreement.
+    """
+    paper = _recalculation(name, sample_data, sample_profile)
+
+    corroboration = next(item for item in paper.corroborations if item.term == "rtt_amount")
+    assert corroboration.rows_compared == CALCULATION_ROWS[name]
+    assert corroboration.agrees is True
+    assert corroboration.impact == Decimal(0)
+
+
+@pytest.mark.parametrize("name", ALL)
+def test_the_formula_reads_back_in_the_preparers_own_column_names(
+    name: str,
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    """A substitution, never a translation: the sentence cannot say what the file does not."""
+    paper = _recalculation(name, sample_data, sample_profile)
+
+    assert paper.basis.formula_in_headers == "FTE Vacation Accrual + Non-FTE Vacation Accrual"
+    assert paper.basis.stated_header == "TOTAL ACCRUAL"
+
+
+@pytest.mark.parametrize("name", ALL)
+def test_rebuilding_the_entry_is_fast_enough_to_run_inside_a_review(
+    name: str,
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    """One pass over the rows. The widest working here is 37,613 records.
+
+    The bound is deliberately loose - it is a guard against a quadratic regression, not a
+    benchmark. Measured on the development machine these run in 25 ms, 25 ms and 200 ms.
+    """
+    paper = _recalculation(name, sample_data, sample_profile)
+
+    assert paper.duration_ms < 5_000, f"{name} took {paper.duration_ms} ms to rebuild"
+
+
+@pytest.mark.parametrize("name", ALL)
+def test_no_citation_or_sample_carries_an_employee_identifier(
+    name: str,
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    """These files hold real names. A citation is a row number and a cell reference."""
+    paper = _recalculation(name, sample_data, sample_profile)
+
+    for citation in paper.citations:
+        labels = {value.label.casefold() for value in citation.inputs}
+        assert not labels & {"matricule", "salari", "nom", "name", "employee"}, labels

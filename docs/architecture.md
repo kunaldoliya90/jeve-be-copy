@@ -25,9 +25,9 @@ write code in it is in [coding-guidelines.md](coding-guidelines.md).
 
 ## The review harness
 
-`app/review/` runs one review as 20 numbered steps. The orchestrator owns ordering,
-concurrency and progress and **never judges content**: every conclusion comes from a tool or
-a routing rule.
+`app/review/` runs one review as 20 numbered steps, plus 7a, 13a, 13b and 13c. The
+orchestrator owns ordering, concurrency and progress and **never judges content**: every
+conclusion comes from a tool or a routing rule.
 
 - `intake/` → `extract/` → `context/` → `orchestrator/` → `tools/` → `agents/` →
   `guardrails/` → `storage/`. Models in `review/models/` carry data between them; the
@@ -43,6 +43,17 @@ a routing rule.
   Each is single-shot, strictly schema-bound, and validated by a guardrail before its answer
   reaches a report. With no key the arithmetic runs in full and the result names what was
   not judged.
+- Step 13c **rebuilds the entry from its own inputs**: the formula the business approved,
+  declared in the JE type file over named inputs with their units and sources, parsed at
+  startup and evaluated per record in Decimal by `review/recalc/`. The recomputed total is
+  set against the booked amount, read from the posted entry's own lines - a different table
+  on a different tab, so the two sides are independent and their difference means something.
+  Every record that does not reconcile becomes a **citation**: the row, the cell the file
+  states its own figure in, the cells each input came from, and a sentence written by code
+  saying why. A missing input is never read as a zero; the record is reported as not rebuilt
+  instead. The engine runs once per review, in the executor, and hands back both the work
+  paper and the figures the check's status is set from, so nothing downstream treats it
+  specially - 37,613 records in about 200 ms.
 - Step 18 also assembles a **category split work paper**: the working re-added row by row and
   divided by the classes its own classification column holds, each column tied against the
   total the file states above its header, the formula behind each column rewritten in the

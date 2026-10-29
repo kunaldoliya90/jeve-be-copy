@@ -12,7 +12,7 @@ starts from here.
   `DELETE /reviews/{id}/`, `GET /reviews/{id}/events/` (SSE), `GET /je-types/`. All under
   `config.API_PREFIX`
   (`/api/jeve`).
-- All 20 numbered steps run, plus 7a, 13a and 13b. Everything is deterministic except
+- All 20 numbered steps run, plus 7a, 13a, 13b and 13c. Everything is deterministic except
   eight model calls — five that always run where a key is configured (AI-1, AI-2, AI-3,
   AI-4, AI-5) and three conditional (AI-M methodology, AI-R screenshots, AI-X clustering).
   Each is optional: with no API key the arithmetic runs end to end and `not_run_for(run)`
@@ -67,7 +67,7 @@ app/
                         EvidenceView.of(), AICallCostView.of(), CostView (+calls),
                         ErrorResponse, area_status(), stored_check(). snake_case end to
                         end; separate from review/models/ on purpose - except
-                        split_summary, which is carried as the harness model
+                        split_summary and recalculation, which are carried as harness models
       llm_models.py     LLMPricing (USD per 1M tokens), LLMRequest (input, instructions,
                         reasoning_effort, max_output_tokens), TokenUsage, LLMCost,
                         LLMCompletion (text, usage, response_id, incomplete_reason),
@@ -87,7 +87,8 @@ app/
       metering_utils.py TokenMeteringUtils (uncached_input_tokens, sum_usage),
                         CostMeteringUtils (calculate_cost, sum_costs); exported from
                         api/utils/__init__.py
-  review/               JE review harness, steps 2-20. Three rules hold throughout:
+  review/               JE review harness, steps 2-20 (plus 7a, 13a, 13b, 13c). Three rules
+                        hold throughout:
                         numbers come only from Python; a model never sees the workbook;
                         anything unproven is never a pass
     consts.py           WorkbookFormat (.xlsx/.xlsm/.xlsb), zip-safety limits, header
@@ -134,8 +135,9 @@ app/
                         MethodologyCache, PictureCache; idle-TTL, thread-safe, keys
                         length-prefixed
       business_rules.yaml   credits, needs_review_cap, bands, tolerance, trend, pii
-      je_types/vacation_accrual_france.yaml   v2. 8 areas, 18 checks (14 by figures),
-                        discriminators, methodology, accounts, population, evidence
+      je_types/vacation_accrual_france.yaml   v3. 8 areas, 19 checks (16 by figures),
+                        discriminators, methodology, recalculation (the approved formula and
+                        its inputs), accounts, population, evidence
       prompts/          AI-1,2,3,4,5,R,M,X
     agents/           every model call. None of them can change a number
       projections.py    the AI boundary, enforced in code: no workbook, no employee data
@@ -155,6 +157,18 @@ app/
       picture.py        AI-R. Reads a pasted screenshot; worth_reading() skips icons.
                         legible=false is a real answer, and the register reports "nobody
                         looked" and "looked and could not read it" differently
+    recalc/             step 13c: the entry rebuilt from the inputs the business approved
+      formula.py        the approved formula, parsed (never eval'd) into closures and cached:
+                        four operators, max/min/abs/round, literals, parentheses. A missing
+                        input propagates as None, so a row an input does not resolve on is
+                        incomplete rather than recomputed as a zero. substitute() rewrites
+                        an expression in the preparer's own column headers
+      engine.py         recalculate(ctx, spec) -> EntryRecalculation. One pass over the
+                        records: inputs read straight out of the sheet's sparse dict into one
+                        reusable row mapping, derived terms in declaration order, the formula,
+                        then the row against the amount the file states. The booked side is
+                        the posting table's own debit lines, quantised like the recomputed
+                        side. Citations are worst-first with one of each kind kept
     guardrails/
       map_check.py      step 9: verifies AI-1 against the workbook. Cited cells must exist
                         and hold something; agreement cited only from the posting tab earns
@@ -191,7 +205,9 @@ app/
                         header: a substitution, never a translation
       planner.py        step 11: plan_from_recipes() for every check that states one;
                         propose_steps() asks AI-2 only about checks with no recipe, and a
-                        step for any other check is discarded
+                        step for any other check is discarded. split_out(plan, tool) lifts
+                        the recalculation step out of the validated plan for step 13c,
+                        keeping step 12's guarantees rather than planning it separately
       runner.py         step 13: runs the validated plan on a thread pool sized by
                         config.TOOL_WORKERS; figure ids are assigned in plan order
       rules.py          step 16: outcome_for() turns figures + any verdict into a status
@@ -204,8 +220,14 @@ app/
                         BoundTable resolves meanings via the verified map. run_tool() is
                         also where a figure's exemplars are capped at ctx.figure_samples.
                         assign_figure_ids(), worst_first()
-    tools/registry.py   the 17 tools a plan may name, and catalogue() for AI-2
+    tools/registry.py   the 18 tools a plan may name, and catalogue() for AI-2
     tools/calculation.py    balance, control_totals, rollup_chain
+    tools/recalculation.py  recalc_entry_total: the thin half of step 13c. run_recalculation()
+                        runs the engine once and returns the work paper *and* the figures, so
+                        the entry reaches a status through the ordinary routing rules - a
+                        decisive entry-level figure, a row-level one carrying the coverage,
+                        and one per corroborated leg. The basis arrives on ctx.je_type_args,
+                        never as a plan argument
     tools/reperformance.py  recalc_accrual, recalc_leave_balance, negative_scan,
                         classification_check, population_reconcile
     tools/salary.py     recalc_salary_per_day, salary_validate
@@ -225,6 +247,11 @@ app/
                         EvidenceStatus, PictureReading, PIIFinding, PIIKind
       verdicts.py       Status + strictness()/stricter(), ReviewFlag, Finding, Verdict,
                         Challenge, CheckOutcome
+      recalculation.py  RecalcUnit, RoundingMode, DiscrepancyKind, BookedMethod, CitedValue,
+                        RecalcCitation, RecalcInputReading, RecalcComponent,
+                        RecalcCorroboration (+.agrees), BookedAmount, RecalcBasis,
+                        EntryRecalculation (+.complete, .ties): step 13c's work paper,
+                        written with the record and served with it
       split_summary.py  SplitBasis, CategoryRef, ComponentSplit (+.shares), SplitTieOut,
                         DerivedRule, WalkStep, RowWalkthrough, ExceptionTest, SplitSummary:
                         the work paper, written with the record and served with it
@@ -237,8 +264,12 @@ app/
                         memory only. Deliberately apart from workbook.py, which may be
                         persisted - a screenshot's bytes never are
       context.py        JETypeContext, BusinessRules, CheckSpec, EvidenceSpec, VariantSpec,
-                        DiscriminatorSpec, MethodologySpec, ContextVersions. extra="forbid"
-                        so a YAML typo is a startup error, not a rule that does nothing
+                        DiscriminatorSpec, MethodologySpec, ContextVersions, and the
+                        recalculation basis (RecalculationSpec, RecalcInputSpec,
+                        DerivedTermSpec, BookedSpec, RoundingSpec, CurrencySpec) whose
+                        formulas are compiled in a validator, so a malformed one fails at
+                        startup naming the field. extra="forbid" so a YAML typo is a startup
+                        error, not a rule that does nothing
   tests/
     conftest.py         autouse isolated_environment (drops FLAVOUR/APP_* env, chdir to
                         tmp); autouse no_live_model (config is built at import, so clearing
@@ -247,11 +278,21 @@ app/
     doubles.py          StubLLMProvider: answers each call from its schema_name and records
                         what crossed the boundary, so judging and reporting are assertable
     unit/               mirrors app/ (api, core, review/models, intake, extract, context,
-                        agents, guardrails, orchestrator, tools, utils)
+                        agents, guardrails, orchestrator, recalc, tools, utils)
     integration/        health, CORS headers, and the whole review flow through TestClient
-    golden/             steps 2-6 against the real workbooks in skills/docs (@pytest.mark.
-                        golden, ~50s). Known gaps are strict xfails, so fixing one fails the
-                        suite until its marker goes
+                        (including step 13c: the work paper, the stream and a re-read)
+    golden/             steps 2-6, the split work paper and step 13c against the real
+                        workbooks in skills/docs (@pytest.mark.golden, ~60s). Known gaps are
+                        strict xfails, so fixing one fails the suite until its marker goes
+skills/docs/            the three real client workbooks the harness was designed against
+skills/scripts/         developer scripts, run by hand. T201 (no print) is ignored here only
+  make_discrepancy.py   writes a copy of a sample workbook that deliberately does not
+                        reconcile, for seeing step 13c fail: --preset resolves the cells
+                        through the sheet map (so it works on any layout) and makes three
+                        edits, one per kind of discrepancy. It edits the sheet XML inside the
+                        package rather than re-saving: openpyxl would drop the posting tab's
+                        cached formula values and the booked side would read as absent,
+                        which is inconclusive rather than a mismatch
 docs/                   coding-guidelines.md (full rules), architecture.md, context.md
 docker-compose.yml      dev stack, app/ bind-mounted; build/Dockerfile* are git-ignored
 Makefile                init, start, stop, runserver, runtests only
@@ -338,7 +379,56 @@ These are the user's choices. They override the guidelines; do not flag them in 
   code, so how an arithmetic check is performed is never chosen by the system that
   interprets the result.
 - Step 19 **lists** an untraced number rather than removing it: deleting it would leave a
-  sentence reading as though it had been verified.
+  sentence reading as though it had been verified. It also reads only numbers *nobody named*:
+  the digits inside a cell reference, a figure id or a period (`AH230`, `F-12`, `FY26`) are
+  part of a name, and listing one tells a reviewer to distrust a figure the report never
+  quoted. A guardrail whose list carries noise is a guardrail that gets ignored.
+- The **approved formula is business knowledge, not code**. `recalculation:` in the JE type
+  file states the formula as an expression over named inputs, each with its unit, its source
+  and whether the formula needs it, plus the supporting conventions the design asks for -
+  sign, currency, rounding, day count, tolerance and a worked example. `review/recalc/
+  formula.py` parses it (never `eval`) into closures and the spec compiles it in a
+  validator, so a malformed formula or a typo in an input name is a startup error naming the
+  field rather than a term that silently evaluates to nothing on every row. A JE type that
+  states no formula reports the recalculation as not run; nothing assumes one.
+- Step 13c is its **own numbered step**, not a tool inside step 13's fan-out, for two
+  reasons: it produces a work paper as well as figures, and it is the one check whose work is
+  visible on the clock, so the person waiting is owed a line of progress naming it (the
+  `step_started` event carries the row count, which is why `_step()` takes a detail at all).
+  The step is lifted out of the *validated* plan by `planner.split_out`, so step 12 has
+  already proved the tool exists, its arguments are ones it declares and its table is bound.
+- The entry recalculation reaches its status as **ordinary figures**: a decisive entry-level
+  figure, a row-level figure carrying the coverage, and one per corroborated leg. No special
+  case in step 16, in scoring or in the guardrails - and `Figure.supports_pass` then enforces
+  gate rule 1 here as everywhere, so a total that agrees over an incomplete population is
+  partial and never a pass. The engine runs **once**, and `run_recalculation` hands back the
+  paper and the figures together: getting them from two runs would walk 37,613 rows twice.
+- The basis travels on `ctx.je_type_args`, never as a plan argument. A tool argument is a
+  column or a table name; a methodology arriving through the plan could be chosen by whatever
+  wrote the plan, which is the thing the recipe rule exists to prevent.
+- Both sides of the comparison are **quantised to the declared scale** before being
+  subtracted. The posted line amounts carry the full precision of the floats they were read
+  from, so summing 6,465 of them leaves a tail around 1e-8; reporting that as
+  "0.0000000248 more than was posted" puts a difference a reviewer cannot act on where a real
+  one belongs. Sub-cent materiality is what `row_tolerance` is for.
+- The formula declared for vacation accrual is the entry's **composition**, not the payroll
+  calculation: each employee's FTE and non-FTE accrual summed, against the posting tab's
+  debit total. Measured against the three real workbooks before it was written - on both
+  French periods the CP provision arrives already calculated from the payroll extract and is
+  reproducible from the columns present on 4% of rows, so a formula that tried to rebuild it
+  would report thousands of exceptions that are not there. The leg that *can* be rebuilt is,
+  as a derived term: remaining RTT days times the daily rate reproduces the workbook's own
+  RTT accrual on every one of 2,273 and 2,280 records. `provisional_basis: true` until the
+  business signs the formula and the +/-0.1% tolerance off, and the work paper says so on its
+  face.
+- `entry_total_recalculates` overlaps `fte_split_aggregates` deliberately. One asks whether
+  each row's split sums to its own stated total; the other asks whether the entry can be
+  produced again at all and whether what was produced is what was booked. The first can hold
+  while the second fails, which is the case nothing else here would catch.
+- The md spec's **PASS = 30 points** is not implemented as a points rule. Scoring is by the
+  business-confirmed area weights, and the check lands in `accrual_reperformance` (weight 25,
+  scored by its weakest check), so a failure there costs the area outright. Adding a parallel
+  points scale would mean two numbers that can disagree about the same check.
 - A review that cannot be identified, or whose two readings disagree, still runs every
   check and still scores — it just never reports as `completed`. The shape decides the type;
   failing that, the type the uploader **declared** is used, recorded as
@@ -519,6 +609,67 @@ Newest first, one line per change. Add a line with every change.
   `POST /api/auth/refresh` 404 is not CORS and is not this service: no auth endpoint exists
   here, by design. 4 integration tests on the preflight and the allow-origin header, 3 unit
   tests on the setting.
+
+- 2026-10-28 (2): `skills/scripts/make_discrepancy.py`, for seeing step 13c fail. The three
+  sample workbooks all reconcile to the cent, so the citations, the failed check and the
+  tolerance breach could only be seen by hand-editing a copy. `--preset` resolves the cells
+  through the harness's own sheet map rather than naming column letters - it picks AF/AG/AH
+  on the French periods and tracks the row offset between them without being told - and
+  makes three edits, one per kind of discrepancy. It rewrites one worksheet part inside the
+  zip rather than re-saving the workbook, because the posting tab's line amounts are formulas
+  (`='JE Create'!O6`) and openpyxl writes formulas back without their cached values: the
+  booked side then reads as absent and the review comes back inconclusive, which looks like
+  the check failing to notice. Verified: the generated copy fails at 135,665.40 with three
+  citations, the same figures as the live run. `T201` is ignored for `skills/scripts/**` -
+  a script run by hand prints, a service logs.
+
+- 2026-10-28: step 19 stopped reporting cell references as untraced numbers. `_NUMBER` had
+  no left boundary, so the digits inside `AH230` matched as 230 and a next step reading
+  "example cell AH230 with -1074.35" listed 230 as a figure that traces to nothing - on a
+  live run of 305800.xlsx, where the cell was the one the negative-accrual check cites. The
+  lookbehind excludes digits, dots, commas and hyphens as well as letters, because the
+  scanner restarts one character later on a blocked position: letters alone would still have
+  matched the `30` of `AH230` and the `12` of `F-12`. Fiscal periods (`FY26`, `P07`) and
+  figure ids stop being reported for the same reason, and a real amount beside a reference
+  ("the -1,074.35 at cell AH230") is still checked. The test that had pinned the old
+  behaviour is now the one that pins this. 706 backend tests, ruff/mypy clean.
+
+- 2026-10-27: the posted amount, rebuilt from its inputs. New step **13c**: the approved
+  formula is now business knowledge in the JE type file (`recalculation:` - formula, inputs
+  with units and sources, sign, currency, rounding, day count, tolerance, worked example),
+  parsed at startup by `review/recalc/formula.py` into closures and evaluated per record by
+  `review/recalc/engine.py` in one pass over the working. The recomputed total is set against
+  the booked amount read from the posting tab's own debit lines, and every record that does
+  not reconcile is a citation: the row, the cell the file states its figure in, the cells each
+  input came from, and a sentence written by code. A missing input is reported, never read as
+  a zero. `recalc_entry_total` turns the same run into ordinary figures, so the new check
+  (`entry_total_recalculates`, in `accrual_reperformance`) reaches its status through step 16
+  with no special case; the work paper is persisted on `ReviewResult` and served as
+  `ReviewDetail.recalculation`. Frontend: a new numbered section, `EntryRecalculation.tsx`,
+  whose head has three distinct states - rebuilt to the cent (the figure stated once, not a
+  table of zeroes), a difference leading with the amount, the percentage and the tolerance it
+  broke, and nothing-to-compare rendered neutral rather than red - plus the formula in the
+  preparer's own headers, the inputs table, the citations, the corroborated legs and the
+  basis. `Block` moved into `Section.tsx` so both work papers share it, and `formatAmount`
+  joins `excelFormat` because `formatExcel` writes a whole number without cents, which is
+  right for a count column and wrong for an entry total. Step 13c is on the progress stream,
+  the `step_started` event carrying the row count so the line reads "37,613 records to re-add"
+  rather than spinning. Verified against all three real workbooks: 28,672,591.24 /
+  27,905,812.64 / 8,435,498,474.10 rebuilt from 2,280, 2,273 and 37,613 records, each equal
+  to its posting tab's debit total to the cent, in 23 ms, 24 ms and 202 ms; the RTT leg
+  re-performs from days times rate on every row of both French periods. Found on the way: the
+  figure quoted the posted line count in its own summary without offering it as traceable, so
+  step 19 listed "426" as an untraced number on every review - every count the explanation
+  states is now on the figure. Verified live against 305800.xlsx end to end (9 model calls,
+  $0.28, 59 events): the entry rebuilt to 27,905,812.64 against the same amount booked, in
+  15 ms, and the work paper came back from the stored record on a second upload rather than
+  as a blank. Verified against a copy of the same workbook edited not to reconcile - one FTE
+  accrual raised by 150,000, one stated total cut by 2,500, one FTE accrual emptied: fail,
+  135,665.40 out (the raise *less* the record that could no longer be rebuilt, which is the
+  proof the gap is not read as a zero), three citations, two kinds, worst first, 0.4862% and
+  the tolerance it broke, and the RTT leg still re-performing on all 2,273 records. 702
+  backend tests (15 golden assertions on the three workbooks), 245 frontend tests,
+  ruff/mypy/eslint/tsc clean.
 
 - 2026-10-23: the arithmetic a reviewer reads. New `orchestrator/split_summary.py` and
   `models/split_summary.py`: at step 18 the working is re-added row by row and divided by

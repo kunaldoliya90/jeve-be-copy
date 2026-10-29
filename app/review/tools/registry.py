@@ -17,6 +17,7 @@ from review.tools.entry import (
     ReversalCheckTool,
 )
 from review.tools.methodology import MethodologyDriftTool
+from review.tools.recalculation import RecalcEntryTotalTool
 from review.tools.reperformance import (
     ClassificationCheckTool,
     NegativeScanTool,
@@ -32,6 +33,7 @@ _TOOLS: Final[tuple[BaseTool, ...]] = (
     ControlTotalsTool(),
     RollupChainTool(),
     # re-performance, row by row
+    RecalcEntryTotalTool(),
     RecalcAccrualTool(),
     RecalcLeaveBalanceTool(),
     ClassificationCheckTool(),

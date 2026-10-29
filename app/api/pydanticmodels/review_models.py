@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from api.consts import ErrorCode, JETypeSource, SSEEvent
 from review.models.context import OBSERVATION_AREA, JETypeContext
 from review.models.evidence import EvidenceItem
+from review.models.recalculation import EntryRecalculation
 from review.models.result import AICallRecord, ReviewResult
 from review.models.split_summary import SplitSummary
 from review.models.verdicts import CheckOutcome, ReviewFlag, Status, stricter
@@ -328,6 +329,19 @@ class ReviewDetail(BaseModel):
             "be the mapping layer that hides drift rather than prevents it."
         ),
     )
+    recalculation: EntryRecalculation | None = Field(
+        default=None,
+        description=(
+            "The entry recalculation work paper: the posted amount regenerated record by "
+            "record from the formula the business approved, set against what was actually "
+            "booked, with a citation for every record that did not reconcile. None where "
+            "the entry type states no formula, where the working could not be bound, and "
+            "on a record stored before the work paper existed. "
+            "Carried as the harness model for the same reason as `split_summary`: every "
+            "field on it is already a reader's field, and a parallel set of view classes "
+            "here would be a mapping layer that hides drift rather than preventing it."
+        ),
+    )
     needs_person: list[CheckView] = Field(default_factory=list)
     next_steps: list[str] = Field(default_factory=list)
     untraced_numbers: list[str] = Field(
@@ -412,6 +426,10 @@ class ReviewDetail(BaseModel):
             # than the thinner projection the checks come back as. It holds no figure: it is
             # its own arithmetic over the rows, plus the statuses step 16 reached.
             split_summary=result.split_summary,
+            # Stored with the record, like the split. The figures behind the check are
+            # working memory and are gone; this paper is the arithmetic itself, so a
+            # re-read shows a reviewer exactly what the run showed them.
+            recalculation=result.recalculation,
             needs_person=[stored_check(outcome, je_spec) for outcome in result.needs_person],
             cost=CostView(
                 ai_calls=len(result.audit.ai_calls),

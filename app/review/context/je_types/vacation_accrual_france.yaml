@@ -8,7 +8,7 @@
 # Business context for everything below: the `vacation-accrual` skill.
 
 id: vacation-accrual-france
-version: 2
+version: 3
 name: France vacation accrual
 process: Record to Report
 sub_process: Payroll
@@ -62,6 +62,79 @@ methodology:
       The workbooks add a twelfth of the RTT provision to a whole-year CP provision. It is
       reproduced because it is what was posted, and reported per affected row rather than
       silently accepted or silently corrected.
+
+# --- how the posted amount is regenerated from first principles --------------------------
+# Read by step 13c. Deterministic code evaluates every line of this; no model sees any of it.
+#
+# The formula is the entry's own composition: each employee's FTE and non-FTE accrual are the
+# two amounts that reach the general ledger (720008 and 720023), and their sum per record,
+# summed over the population, is the entry. It is compared against the debit side of the
+# posted entry, read from the posting tab's own lines - a different table, a different tab,
+# so the two sides are independent and a difference between them means something.
+#
+# What this does NOT claim. The CP provision arrives on the working already calculated, from
+# the payroll extract, and cannot be re-derived from the columns this workbook carries: on
+# both sample files the balance in days times the daily rate reproduces it on 4% of rows, so
+# a formula that tried would report thousands of exceptions that are not there. It is
+# declared as an input with its source named instead. The leave leg that *can* be rebuilt is,
+# as a derived term: remaining RTT days times the daily rate, which reproduces the workbook's
+# own RTT accrual on every one of the 2,273 and 2,280 records of the two sample files.
+#
+# `provisional_basis` stays true until the business signs off the formula and the +/-0.1%
+# tolerance. The arithmetic runs either way; what changes is whether agreement may be relied
+# on, and the work paper says so on its face.
+recalculation:
+  table: calculation
+  record_key: employee_ref
+  stated: total_accrual
+  formula: fte_amount + non_fte_amount
+  sign: a positive amount is a debit to the expense accounts
+  day_count: the approved denominator stated in the methodology, never an assumed 30
+  tolerance_pct: 0.1
+  row_tolerance: 0.01
+  provisional_basis: true
+  rounding: { decimals: 2, mode: half_up }
+  currency: { meaning: currency, default: EUR }
+  booked: { method: posting_debits, table: je_posting, amount: line_amount, account: account }
+  worked_example: >
+    One record of the working: 5.666667 remaining RTT days at a daily rate of 311.728889
+    gives an RTT accrual of 1,766.46, which is the amount the workbook states for that row.
+    The record's FTE and non-FTE accruals, 12,556.50 and 0.00, add to the 12,556.50 it
+    states as that employee's total. Every record added together gives the entry.
+  inputs:
+    - id: fte_amount
+      meaning: fte_accrual
+      unit: currency
+      required: true
+      description: The employee's FTE share of the accrual, posted to the FTE expense account.
+    - id: non_fte_amount
+      meaning: non_fte_accrual
+      unit: currency
+      required: true
+      description: The non-FTE share, posted to the non-FTE expense account.
+    - id: cp_provision
+      meaning: cp_provision
+      unit: currency
+      required: false
+      description: >
+        The CP provision as the payroll extract states it. Carried for the reader and not
+        re-derived: this workbook holds no inputs it can be rebuilt from.
+    - id: rtt_days
+      meaning: rtt_balance_days
+      unit: days
+      required: false
+      description: Remaining RTT days at the reporting date, floored at zero.
+    - id: daily_rate
+      meaning: daily_salary_rate
+      unit: currency_per_day
+      required: false
+      description: The daily salary rate the RTT accrual is valued at.
+  derive:
+    - id: rtt_amount
+      expression: max(rtt_days, 0) * daily_rate
+      unit: currency
+      agrees_with: rtt_accrual
+      description: RTT accrual, re-performed from the remaining days and the daily rate.
 
 accounts:
   source: master_data
@@ -215,6 +288,24 @@ checks:
     decided_by: figures
     risk: The leave balance is the quantity being valued; an error here scales linearly.
     recipe: { tool: recalc_leave_balance, args: { table: calculation } }
+
+  # The entry-level re-performance, and the only check that sets the posted amount against a
+  # figure rebuilt from the inputs rather than against another column of the same workbook.
+  # It overlaps `fte_split_aggregates` by design: that check asks whether each row's split
+  # sums to its own total, this one asks whether the entry can be produced again at all and
+  # whether what was produced is what was booked. The first can hold while the second fails,
+  # which is precisely the case nothing else here would catch.
+  - id: entry_total_recalculates
+    area: accrual_reperformance
+    question: >
+      Can the amount that was posted be regenerated from the approved formula, record by
+      record, and does the total agree with what was booked, within tolerance?
+    decided_by: figures
+    risk: >
+      An entry that cannot be reproduced from its own inputs has no basis a reviewer can
+      stand behind, and a difference against the posted amount is money in the wrong period
+      or the wrong account.
+    recipe: { tool: recalc_entry_total, args: { table: calculation } }
 
   - id: accrual_reperforms
     area: accrual_reperformance

@@ -765,7 +765,7 @@ def test_the_plan_is_built_from_the_recipes_and_every_step_survives_checking(
     assert stored is not None
     # Every check the context file states produced an outcome, which is only true if every
     # planned step ran.
-    assert len(stored.checks) == 18
+    assert len(stored.checks) == 19
 
 
 # ---------------------------------------------------------------- what the review cost
@@ -1136,3 +1136,134 @@ def test_a_reused_review_answers_with_the_result_it_reused(
 
 def test_a_review_that_is_not_a_reuse_says_so(api: TestClient, workbook: bytes) -> None:
     assert api.get(f"{REVIEWS}{_finish(api, workbook)}/").json()["reused_from"] is None
+
+
+# ----------------------------------------- step 13c: the entry rebuilt from its inputs
+
+
+def test_the_entry_is_rebuilt_from_its_inputs_and_tied_to_the_posting(
+    api: TestClient, workbook: bytes
+) -> None:
+    """The feature's own measure, through the API a browser codes against.
+
+    ``28,672,591.24`` is not here by accident: it is the debit total of this workbook's
+    posting tab, and the point is that an independent rebuild of 2,280 employee rows from
+    the approved formula reaches it to the cent.
+    """
+    review_id = _upload(api, "236264.xlsx", workbook).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    paper = api.get(f"{REVIEWS}{review_id}/").json()["recalculation"]
+    assert paper is not None, "a workbook that bound its working must be recalculated"
+
+    assert Decimal(paper["recomputed_total"]) == Decimal("28672591.24")
+    assert Decimal(paper["booked"]["total"]) == Decimal("28672591.24")
+    assert Decimal(paper["difference"]) == Decimal("0.00")
+    assert paper["within_tolerance"] is True
+    assert paper["status"] == "pass"
+    assert paper["rows_total"] == 2_280
+    assert paper["rows_recomputed"] == 2_280
+    assert paper["citations"] == []
+    assert paper["citation_count"] == 0
+
+    basis = paper["basis"]
+    assert basis["sheet"] == "GPAY"
+    assert basis["formula"] == "fte_amount + non_fte_amount"
+    assert basis["formula_in_headers"] == "FTE Vacation Accrual + Non-FTE Vacation Accrual"
+    assert Decimal(basis["tolerance_pct"]) == Decimal("0.1")
+    assert basis["provisional_basis"] is True, "the business has not signed the basis off"
+
+    # The booked side is read from the posted entry's own lines, which is what makes the
+    # comparison worth making at all.
+    assert paper["booked"]["method"] == "posting_debits"
+    assert paper["booked"]["accounts"] == ["720008", "720023"]
+
+    # And the leg that can be rebuilt from first principles was, on every row.
+    corroboration = next(item for item in paper["corroborations"] if item["term"] == "rtt_amount")
+    assert corroboration["rows_compared"] == 2_280
+    assert corroboration["agrees"] is True
+
+
+def test_the_recalculation_reaches_the_score_as_an_ordinary_check(
+    api: TestClient, workbook: bytes
+) -> None:
+    """No special case anywhere downstream: it is a check in an area, with a status."""
+    review_id = _upload(api, "236264.xlsx", workbook).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    detail = api.get(f"{REVIEWS}{review_id}/").json()
+    area = next(item for item in detail["areas"] if item["area"] == "accrual_reperformance")
+    check = next(item for item in area["checks"] if item["check_id"] == "entry_total_recalculates")
+
+    assert check["status"] == "pass"
+    assert check["decided_by"] == "figures"
+    assert check["needs_review"] is False
+    assert check["cells"] or check["conclusion"], "a check with no evidence at all is a gap"
+
+
+def test_the_stream_announces_the_recalculation_before_and_after_it_runs(
+    api: TestClient, workbook: bytes
+) -> None:
+    """A step that takes visible time must be named while it is taking it.
+
+    The started event carries the number of rows about to be walked, so the UI can say what
+    is happening rather than spinning; the finished event carries the comparison.
+    """
+    review_id = _upload(api, "236264.xlsx", workbook).json()["review_id"]
+    payloads = []
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        for line in stream.iter_lines():
+            if line.startswith("data:"):
+                payloads.append(json.loads(line.removeprefix("data:").strip()))
+
+    steps = [payload for payload in payloads if payload["step"] == "13c"]
+    started = next(item for item in steps if item["event"] == SSEEvent.STEP_STARTED)
+    finished = next(item for item in steps if item["event"] == SSEEvent.STEP_FINISHED)
+
+    assert started["detail"]["rows"] > 2_000
+    assert started["progress_pct"] == 80
+
+    assert finished["detail"]["status"] == "pass"
+    assert finished["detail"]["rows_recomputed"] == 2_280
+    assert Decimal(str(finished["detail"]["difference"])) == Decimal("0.00")
+    assert finished["detail"]["within_tolerance"] is True
+    assert finished["detail"]["formula"] == "FTE Vacation Accrual + Non-FTE Vacation Accrual"
+
+
+def test_the_recalculation_survives_a_re_read_of_the_stored_record(
+    api: TestClient, workbook: bytes
+) -> None:
+    """Its arithmetic is the evidence, so it is part of the work product, not working memory."""
+    review_id = _upload(api, "236264.xlsx", workbook).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    live = api.get(f"{REVIEWS}{review_id}/").json()["recalculation"]
+    orchestrator_of(api).forget(review_id)
+    stored = api.get(f"{REVIEWS}{review_id}/").json()["recalculation"]
+
+    assert stored == live
+
+
+def test_the_recalculation_carries_no_employee_identifier(api: TestClient, workbook: bytes) -> None:
+    """It shows amounts against row numbers. This file's names must not leave it."""
+    review_id = _upload(api, "236264.xlsx", workbook).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    body = json.dumps(api.get(f"{REVIEWS}{review_id}/").json()["recalculation"])
+    assert "Confidential" not in body
+    assert "Matricule" not in body
+
+
+def test_a_workbook_that_binds_no_working_gets_no_recalculation(
+    api: TestClient, unreadable_workbook: bytes
+) -> None:
+    """``null`` rather than a work paper of zeros, which would read as an entry worth nothing."""
+    review_id = _upload(api, "notes.xlsx", unreadable_workbook).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    assert api.get(f"{REVIEWS}{review_id}/").json()["recalculation"] is None

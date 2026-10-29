@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from api.consts import RiskRating
 from review.models.evidence import EvidenceItem, PIIFinding
+from review.models.recalculation import EntryRecalculation
 from review.models.split_summary import SplitSummary
 from review.models.verdicts import CheckOutcome, Status
 
@@ -210,6 +211,15 @@ class ReviewResult(BaseModel):
             "when the workbook bound no table whose rows could be re-added, and None on "
             "every record written before the work paper existed - records are write-once, "
             "so a required field here would make those unreadable rather than incomplete."
+        ),
+    )
+    recalculation: EntryRecalculation | None = Field(
+        default=None,
+        description=(
+            "The entry recalculation work paper: the posted amount regenerated from the "
+            "approved formula, record by record, against what was booked. None where the "
+            "entry type states no formula, where the working could not be bound, and on "
+            "every record written before the work paper existed."
         ),
     )
     report: ReportPayload | None = Field(default=None)

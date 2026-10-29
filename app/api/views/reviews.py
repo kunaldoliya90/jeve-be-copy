@@ -353,6 +353,10 @@ def _detail(run: ReviewRun) -> ReviewDetail:
         detail = detail.model_copy(
             update={"evidence": [EvidenceView.of(item) for item in run.context.evidence_register]}
         )
+    if run.recalculation is not None:
+        # The same object step 20 stores, so the live view and a re-read can never report
+        # the entry's recalculation differently.
+        detail = detail.model_copy(update={"recalculation": run.recalculation})
     if run.split_summary is not None:
         # The same object step 20 stored, so the live view and a re-read of the record can
         # never report the split differently.

@@ -12,8 +12,10 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from api.consts import RiskRating
+from review.models.recalculation import BookedMethod, RecalcUnit, RoundingMode
 from review.models.result import ScoringMethod
 from review.models.verdicts import Status
+from review.recalc.formula import FormulaError, compile_formula
 
 
 class DecidedBy(StrEnum):
@@ -168,6 +170,181 @@ class PopulationSpec(_Frozen):
     exclude: tuple[str, ...] = Field(default=())
 
 
+class RoundingSpec(_Frozen):
+    """The scale and direction the business rounds this entry's amounts to."""
+
+    decimals: int = Field(default=2, ge=0, le=10)
+    mode: RoundingMode = Field(default=RoundingMode.HALF_UP)
+
+    def describe(self) -> str:
+        return f"{self.decimals} decimal places, {self.mode.value.replace('_', ' ')}"
+
+
+class CurrencySpec(_Frozen):
+    """Where the entry's currency is read from, and what it is when the file is silent."""
+
+    meaning: str | None = Field(
+        default=None, description="Column meaning holding the currency, where the file carries one"
+    )
+    default: str = Field(default="", description="Used only when no column states it")
+
+
+class RecalcInputSpec(_Frozen):
+    """One input the approved formula reads, with its unit and where it comes from.
+
+    Exactly one of ``meaning`` and ``value``: an input is either a column of this workbook or
+    a constant the business states (a day-count denominator, a statutory rate). A constant
+    with no owner is the thing this forbids - a 30 hardcoded in a formula is a methodology
+    nobody approved.
+    """
+
+    id: str = Field(..., min_length=1, description="What the formula calls it")
+    meaning: str | None = Field(default=None, description="The column meaning it is read from")
+    value: Decimal | None = Field(default=None, description="A constant the business states")
+    unit: RecalcUnit = Field(default=RecalcUnit.CURRENCY)
+    source: str = Field(default="", description="The table it comes from; defaults to the working")
+    required: bool = Field(
+        default=True,
+        description=(
+            "Whether the formula cannot be evaluated without it. A required input this "
+            "workbook does not carry makes the recalculation inconclusive, never a failure."
+        ),
+    )
+    description: str = Field(default="", description="What it is, in the business's words")
+
+    @model_validator(mode="after")
+    def _a_column_or_a_constant(self) -> "RecalcInputSpec":
+        if (self.meaning is None) == (self.value is None):
+            raise ValueError(f"input {self.id!r} must state exactly one of a meaning or a value")
+        return self
+
+
+class DerivedTermSpec(_Frozen):
+    """One intermediate the formula is built from, so the arithmetic reads in stages.
+
+    ``agrees_with`` is the strongest evidence the work paper can carry: the term is
+    re-performed from its inputs and compared, row by row, against a column the workbook
+    computes for the same quantity. It corroborates; it never decides.
+    """
+
+    id: str = Field(..., min_length=1)
+    expression: str = Field(..., min_length=1, description="Over inputs and earlier terms")
+    unit: RecalcUnit = Field(default=RecalcUnit.CURRENCY)
+    agrees_with: str | None = Field(
+        default=None, description="A column meaning holding the workbook's own answer for it"
+    )
+    description: str = Field(default="", description="What it is, in the business's words")
+
+
+class BookedSpec(_Frozen):
+    """How the amount that was actually posted is read - never from the working itself.
+
+    The point of the comparison is independence. ``posting_debits`` sums the debit side of
+    the posted entry from its own lines, which is a different tab, a different table and a
+    different reading from the one the recomputation walks.
+    """
+
+    method: BookedMethod = Field(default=BookedMethod.POSTING_DEBITS)
+    table: str = Field(default="je_posting", description="The table the booked amount is read from")
+    amount: str = Field(default="line_amount", description="The column meaning holding each line")
+    account: str = Field(default="account", description="Used only to report which accounts it hit")
+    fact: str = Field(
+        default="", description="Fact name, for a control total the entry states about itself"
+    )
+
+
+class RecalculationSpec(_Frozen):
+    """The approved basis for regenerating this entry's value, owned by the business.
+
+    Everything the design asks of a re-performance in one declaration: the formula, the
+    inputs with their units and sources, the supporting conventions (sign, currency,
+    rounding, day count), the tolerance the comparison is made under, and a worked example.
+    Code evaluates it; no model ever sees it, and nothing in the harness assumes a formula
+    for a JE type that does not state one.
+    """
+
+    table: str = Field(default="calculation", description="The working the records are read from")
+    record_key: str = Field(
+        default="employee_ref",
+        description=(
+            "The meaning that separates a record from the blank and subtotal rows beneath "
+            "the data. A profiled block reaches past the last record, and on one sample "
+            "file the row below it restates the whole entry."
+        ),
+    )
+    formula: str = Field(..., min_length=1, description="Per record, over inputs and derived terms")
+    stated: str | None = Field(
+        default=None,
+        description=(
+            "The column meaning holding the workbook's own amount for each record, which is "
+            "what row-level citations are raised against. None where the file states none."
+        ),
+    )
+    inputs: tuple[RecalcInputSpec, ...] = Field(..., min_length=1)
+    derive: tuple[DerivedTermSpec, ...] = Field(default=())
+    booked: BookedSpec = Field(default_factory=BookedSpec)
+    sign: str = Field(default="", description="Which side of the entry a positive amount is")
+    currency: CurrencySpec = Field(default_factory=CurrencySpec)
+    rounding: RoundingSpec = Field(default_factory=RoundingSpec)
+    day_count: str = Field(
+        default="",
+        description=(
+            "The day-count convention, named rather than assumed. Never an implied 30: a "
+            "denominator nobody stated is a methodology nobody approved."
+        ),
+    )
+    tolerance_pct: Decimal = Field(
+        default=Decimal("0.1"),
+        ge=0,
+        description="Entry-level tolerance, as a percentage of the booked amount",
+    )
+    row_tolerance: Decimal = Field(
+        default=Decimal("0.01"),
+        ge=0,
+        description="Per-row headroom for the currency's own rounding, in currency units",
+    )
+    provisional_basis: bool = Field(
+        default=False,
+        description=(
+            "True until the business has signed the formula and the tolerance off. The work "
+            "paper says so on its face: a pass under an unapproved basis is not a pass."
+        ),
+    )
+    worked_example: str = Field(
+        default="", description="The business's own worked example, shown beside the formula"
+    )
+
+    @property
+    def names(self) -> frozenset[str]:
+        """Everything the formula and the derived terms may refer to."""
+        return frozenset({item.id for item in self.inputs} | {term.id for term in self.derive})
+
+    @model_validator(mode="after")
+    def _ids_are_unique(self) -> "RecalculationSpec":
+        ids = [item.id for item in self.inputs] + [term.id for term in self.derive]
+        duplicates = sorted({name for name in ids if ids.count(name) > 1})
+        if duplicates:
+            raise ValueError(f"recalculation declares {duplicates} more than once")
+        return self
+
+    @model_validator(mode="after")
+    def _every_expression_parses(self) -> "RecalculationSpec":
+        """Parsed here so a malformed formula stops startup naming the field.
+
+        A derived term may only read inputs and terms declared *before* it, which makes the
+        evaluation order the declaration order and a cycle impossible to write.
+        """
+        known = {item.id for item in self.inputs}
+        try:
+            for term in self.derive:
+                compile_formula(term.expression, frozenset(known))
+                known.add(term.id)
+            compile_formula(self.formula, frozenset(known))
+        except FormulaError as exc:
+            raise ValueError(str(exc)) from exc
+        return self
+
+
 class JETypeContext(_Frozen):
     """One JE type, loaded from ``context/je_types/<id>.yaml``."""
 
@@ -187,6 +364,14 @@ class JETypeContext(_Frozen):
 
     discriminators: DiscriminatorSpec | None = Field(default=None)
     methodology: MethodologySpec | None = Field(default=None)
+    recalculation: RecalculationSpec | None = Field(
+        default=None,
+        description=(
+            "The approved formula for regenerating this entry's value. None for a JE type "
+            "whose formula the business has not stated, and the entry-level recalculation "
+            "then reports as not run rather than inventing one."
+        ),
+    )
     accounts: AccountsSpec | None = Field(default=None)
     population: PopulationSpec | None = Field(default=None)
     known_patterns: tuple[str, ...] = Field(default=())

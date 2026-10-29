@@ -17,6 +17,7 @@ from review.orchestrator.planner import (
     merge,
     plan_from_recipes,
     propose_steps,
+    split_out,
     unplanned,
 )
 from tests.doubles import StubLLMProvider
@@ -196,3 +197,33 @@ def test_a_proposed_step_cannot_displace_a_recipe_step() -> None:
 
     assert [step.tool for step in merged.steps] == ["recalc_accrual"]
     assert merged.source is PlanSource.RECIPE, "nothing of the model's was taken"
+
+
+# --- splitting one tool out of a validated plan ---------------------------------------------
+
+
+def test_splitting_a_tool_nobody_planned_leaves_the_plan_untouched() -> None:
+    plan = ExecutionPlan(steps=(PlanStep(check_id="a", tool="balance"),))
+
+    taken, rest = split_out(plan, "recalc_entry_total")
+
+    assert taken == ()
+    assert rest is plan
+
+
+def test_the_split_keeps_the_steps_apart_and_the_source_the_same() -> None:
+    """Step 13c runs the recalculation; step 13 runs everything else, once each."""
+    plan = ExecutionPlan(
+        steps=(
+            PlanStep(check_id="a", tool="balance"),
+            PlanStep(check_id="b", tool="recalc_entry_total"),
+            PlanStep(check_id="c", tool="formula_health"),
+        ),
+        source=PlanSource.RECIPE,
+    )
+
+    taken, rest = split_out(plan, "recalc_entry_total")
+
+    assert [step.check_id for step in taken] == ["b"]
+    assert [step.check_id for step in rest.steps] == ["a", "c"]
+    assert rest.source is PlanSource.RECIPE

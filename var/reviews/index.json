@@ -1,22 +1,42 @@
 {
-  "rev_20261022T074956_63c71664": {
-    "review_id": "rev_20261022T074956_63c71664",
-    "file_name": "236264.xlsx",
-    "je_type": "vacation-accrual-france",
-    "status": "needs_review",
-    "score": 37.5,
-    "band": "High risk",
-    "provisional": true,
-    "created_at": "2026-10-22T07:49:56.507616+00:00"
-  },
-  "rev_20261023T015939_8037f99f": {
-    "review_id": "rev_20261023T015939_8037f99f",
+  "rev_20261027T184544_61ae3c18": {
+    "review_id": "rev_20261027T184544_61ae3c18",
     "file_name": "305800.xlsx",
     "je_type": "vacation-accrual-france",
     "status": "needs_review",
     "score": 32.5,
     "band": "High risk",
     "provisional": true,
-    "created_at": "2026-10-23T01:59:39.718366+00:00"
+    "created_at": "2026-10-27T18:45:44.841624+00:00"
+  },
+  "rev_20261027T184825_51902ac3": {
+    "review_id": "rev_20261027T184825_51902ac3",
+    "file_name": "236264.xlsx",
+    "je_type": "vacation-accrual-france",
+    "status": "needs_review",
+    "score": 37.5,
+    "band": "High risk",
+    "provisional": true,
+    "created_at": "2026-10-27T18:48:25.668222+00:00"
+  },
+  "rev_20261027T185006_98b9b09d": {
+    "review_id": "rev_20261027T185006_98b9b09d",
+    "file_name": "935348.xlsb",
+    "je_type": "vacation-accrual-france",
+    "status": "needs_review",
+    "score": 42.5,
+    "band": "High risk",
+    "provisional": true,
+    "created_at": "2026-10-27T18:50:06.640734+00:00"
+  },
+  "rev_20261028T043531_3d879e57": {
+    "review_id": "rev_20261028T043531_3d879e57",
+    "file_name": "305800 - Copy (5).xlsx",
+    "je_type": "vacation-accrual-france",
+    "status": "needs_review",
+    "score": 20.0,
+    "band": "High risk",
+    "provisional": true,
+    "created_at": "2026-10-28T04:35:31.735787+00:00"
   }
 }
