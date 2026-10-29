@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from api.consts import RiskRating
 from review.models.evidence import EvidenceItem, PIIFinding
+from review.models.split_summary import SplitSummary
 from review.models.verdicts import CheckOutcome, Status
 
 
@@ -70,7 +71,6 @@ class ReportPayload(BaseModel):
 
     headline: str = Field(default="")
     summary: str = Field(default="")
-    gaps: tuple[str, ...] = Field(default=())
     next_steps: tuple[str, ...] = Field(default=())
     untraced_numbers: tuple[str, ...] = Field(
         default=(), description="Listed rather than silently removed"
@@ -203,6 +203,15 @@ class ReviewResult(BaseModel):
     pii_flagged: bool = Field(default=False)
     pii_findings: tuple[PIIFinding, ...] = Field(default=())
     evidence_register: tuple[EvidenceItem, ...] = Field(default=())
+    split_summary: SplitSummary | None = Field(
+        default=None,
+        description=(
+            "The category split work paper: the working re-added from its own rows. None "
+            "when the workbook bound no table whose rows could be re-added, and None on "
+            "every record written before the work paper existed - records are write-once, "
+            "so a required field here would make those unreadable rather than incomplete."
+        ),
+    )
     report: ReportPayload | None = Field(default=None)
     audit: AuditTrail
     created_at: datetime

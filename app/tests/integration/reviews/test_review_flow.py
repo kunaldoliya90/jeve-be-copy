@@ -183,6 +183,99 @@ def test_the_accrual_reperforms_row_by_row(api: TestClient, workbook: bytes) -> 
     assert "2,280 of 2,280 rows agree" in accrual["conclusion"]
 
 
+def test_the_recalculation_work_paper_reaches_the_api(api: TestClient, workbook: bytes) -> None:
+    """The arithmetic a reviewer reads, on the real file, through the real contract.
+
+    Every figure asserted here was produced by code walking cells and nothing else, so these
+    are the numbers 236264.xlsx actually holds. ``27,839,758`` is not in this test by
+    accident: it is the FTE vacation accrual the workbook states above its own data, and the
+    point of the section is that an independent re-add of 2,280 employee rows reaches it.
+    """
+    review_id = _upload(api, "236264.xlsx", workbook).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    paper = api.get(f"{REVIEWS}{review_id}/").json()["split_summary"]
+    assert paper is not None, "a workbook that bound its calculation tab must produce one"
+
+    basis = paper["basis"]
+    assert basis["sheet"] == "GPAY"
+    assert basis["rows_read"] == 2_280, "the employee rows, without the subtotal beneath them"
+    assert basis["classification_meaning"] == "fte_classification"
+
+    # Discovered from the column, not configured anywhere.
+    assert {entry["label"] for entry in paper["categories"]} == {"FTE", "Non-FTE"}
+
+    # Each component's classes add up to its own total, which is what makes the matrix
+    # readable as a matrix rather than as a list of unrelated figures.
+    for component in paper["components"]:
+        assert Decimal(component["total"]) == sum(
+            (Decimal(amount) for amount in component["amounts"].values()), Decimal(0)
+        ), component["header"]
+
+    # And every total the preparer typed above a column agrees with the re-add beneath it.
+    assert paper["tie_outs"]
+    assert all(entry["within_tolerance"] for entry in paper["tie_outs"])
+
+
+def test_the_work_paper_carries_no_employee_identifier(api: TestClient, workbook: bytes) -> None:
+    """The traced rows are row numbers. This file's employee names must not leave it.
+
+    Asserted over the serialised work paper rather than over the model, because the thing
+    that matters is what crosses the network. "Confidential" is what the preparer redacted
+    the name column to, so finding it would mean that column had been shown at all.
+
+    Scoped to the work paper on purpose. The response as a whole does carry "Matricule", on
+    ``workbook.sheets[].headers`` - deliberately, and for a different reason: a header is a
+    label the preparer wrote rather than anybody's data, and it is what makes the structure
+    legible to a reviewer. This section is the one that shows *values*, so it is the one that
+    has to leave the identifying columns out.
+    """
+    review_id = _upload(api, "236264.xlsx", workbook).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    paper = api.get(f"{REVIEWS}{review_id}/").json()["split_summary"]
+    body = json.dumps(paper)
+    assert "Confidential" not in body
+    assert "Matricule" not in body
+
+
+def test_the_work_paper_survives_a_re_read_of_the_stored_record(
+    api: TestClient, workbook: bytes
+) -> None:
+    """It is part of the work product, so it has to come back after the run is forgotten.
+
+    The figures a check cited are working memory and deliberately are not kept; this is not,
+    because its arithmetic *is* the evidence. A re-read that lost it would leave a stored
+    review less defensible than the same review was an hour earlier.
+    """
+    review_id = _upload(api, "236264.xlsx", workbook).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    live = api.get(f"{REVIEWS}{review_id}/").json()["split_summary"]
+    orchestrator_of(api).forget(review_id)
+    stored = api.get(f"{REVIEWS}{review_id}/").json()["split_summary"]
+
+    assert stored == live
+
+
+def test_a_workbook_that_binds_nothing_gets_no_work_paper(
+    api: TestClient, unreadable_workbook: bytes
+) -> None:
+    """``null``, not an empty one.
+
+    A section of dashes is indistinguishable from a section that failed to compute, and this
+    review already says what it could not do in terms a person can act on.
+    """
+    review_id = _upload(api, "notes.xlsx", unreadable_workbook).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    assert api.get(f"{REVIEWS}{review_id}/").json()["split_summary"] is None
+
+
 def test_progress_events_carry_no_cell_contents(api: TestClient, workbook: bytes) -> None:
     """Events say where the system looked. The workbook's contents do not cross the wire."""
     review_id = _upload(api, "236264.xlsx", workbook).json()["review_id"]
@@ -309,7 +402,7 @@ def test_the_report_is_written_even_with_no_model_configured(
 
     assert detail["headline"].startswith(f"{detail['score']} out of 100")
     assert "checks ran on this entry" in detail["summary"]
-    assert detail["gaps"], "unproven checks are named as gaps"
+    assert detail["next_steps"], "a template still says what a person has to do"
     assert detail["untraced_numbers"] == [], "a template quotes only figures it was given"
     assert detail["cost"]["total_usd"] == "0", "no model ran, so nothing was spent"
 
@@ -341,17 +434,17 @@ def test_the_model_writes_the_report_when_one_is_configured(
 ) -> None:
     _agrees_on_the_type(stub_model)
     stub_model.answers["summary"] = {
-        "summary": "The entry reperformed in full. Population could not be validated.",
-        "gaps": ["The employee reference is redacted, so the population cannot be tied."],
+        "summary": (
+            "The entry reperformed in full. Population could not be validated: the employee "
+            "reference is redacted, so the population cannot be tied."
+        ),
         "next_steps": ["Obtain an unredacted or hashed employee reference."],
     }
 
     detail = stub_client.get(f"{REVIEWS}{_finish(stub_client, workbook)}/").json()
 
     assert detail["summary"].startswith("The entry reperformed in full")
-    assert detail["gaps"] == [
-        "The employee reference is redacted, so the population cannot be tied."
-    ]
+    assert "the population cannot be tied" in detail["summary"]
     assert detail["next_steps"] == ["Obtain an unredacted or hashed employee reference."]
     # The headline stays code's: the score and the counts are not left to prose.
     assert detail["headline"].startswith(f"{detail['score']} out of 100")
@@ -398,7 +491,7 @@ def test_a_second_reading_that_cannot_place_the_file_sends_it_to_a_person(
     detail = stub_client.get(f"{REVIEWS}{_finish(stub_client, workbook)}/").json()
 
     assert detail["status"] == "needs_review"
-    assert any("could not place it" in gap for gap in detail["gaps"])
+    assert "could not place it" in detail["summary"]
     assert detail["score"] is not None, "a disputed type does not stop the arithmetic"
 
     stored = store_of(stub_client).read(detail["review_id"])
@@ -423,7 +516,7 @@ def test_a_citation_pointing_at_an_empty_cell_is_reported_unverified(
 
     detail = stub_client.get(f"{REVIEWS}{_finish(stub_client, workbook)}/").json()
 
-    assert any("point at cells that are empty or absent" in gap for gap in detail["gaps"])
+    assert "point at cells that are empty or absent" in detail["summary"]
 
 
 def test_the_type_reading_never_sees_the_workbook(
@@ -463,7 +556,6 @@ def test_a_number_the_model_invented_is_named_not_removed(
     """
     stub_model.answers["summary"] = {
         "summary": "The accrual understates the liability by 918273.45.",
-        "gaps": [],
         "next_steps": [],
     }
 
@@ -547,7 +639,7 @@ def test_a_stored_review_is_served_after_the_run_is_forgotten(
     assert reread["score"] == live["score"]
     assert reread["headline"] == live["headline"]
     assert reread["summary"] == live["summary"]
-    assert reread["gaps"] == live["gaps"]
+    assert reread["next_steps"] == live["next_steps"]
     assert reread["progress_pct"] == 100
 
 
@@ -667,7 +759,7 @@ def test_the_plan_is_built_from_the_recipes_and_every_step_survives_checking(
     review_id = _finish_as(api, workbook, "vacation-accrual-france")
     detail = api.get(f"{REVIEWS}{review_id}/").json()
 
-    assert not any("could not be checked" in gap for gap in detail["gaps"])
+    assert "could not be checked" not in detail["summary"]
 
     stored = store_of(api).read(review_id)
     assert stored is not None
@@ -957,9 +1049,10 @@ def test_an_unrecognised_workbook_still_says_what_was_missing(
     assert detail["status"] == "needs_review"
     assert detail["je_type_source"] == "unknown"
     assert "No check ran" in detail["headline"]
-    assert any("cp_rtt_france" in gap for gap in detail["gaps"]), "which type was ruled out"
-    assert any("'calculation'" in gap for gap in detail["gaps"]), "and which table was missing"
-    assert detail["next_steps"], "a review nobody can act on is the bug being fixed here"
+    steps = detail["next_steps"]
+    assert steps, "a review nobody can act on is the bug being fixed here"
+    assert any("cp_rtt_france" in step for step in steps), "which type was ruled out"
+    assert any("'calculation'" in step for step in steps), "and which table was missing"
     assert detail["score"] is None, "nothing ran, so nothing is scored"
 
 
@@ -1000,7 +1093,7 @@ def test_a_declared_type_never_reports_as_completed(
 
     assert detail["status"] == "needs_review"
     assert any("did not establish" in step for step in detail["next_steps"])
-    assert any("matched no entry type" in gap for gap in detail["gaps"])
+    assert "matched no entry type" in detail["summary"]
 
 
 def test_a_declared_type_is_never_remembered_as_a_known_layout(

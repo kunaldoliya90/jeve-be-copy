@@ -36,17 +36,11 @@ MAX_LISTED: Final = 6
 SUMMARY_SCHEMA: Final[dict[str, Any]] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["summary", "gaps", "next_steps"],
+    "required": ["summary", "next_steps"],
     "properties": {
         "summary": {
             "type": "string",
             "description": "Three to five sentences, what a reviewer must act on first",
-        },
-        "gaps": {
-            "type": "array",
-            "maxItems": MAX_LISTED,
-            "items": {"type": "string"},
-            "description": "What could not be validated, and why",
         },
         "next_steps": {
             "type": "array",
@@ -75,8 +69,8 @@ async def summarise(
     numbers most likely to be quoted onward, and those are not left to prose.
 
     ``notes`` are review-level observations code established — an uncorroborated entry type,
-    for instance. They are prepended to the gaps either way, so a caveat a reviewer must see
-    does not depend on a model choosing to repeat it. ``steps`` are the same thing for the
+    for instance. They are appended to the summary either way, so a caveat a reviewer must
+    see does not depend on a model choosing to repeat it. ``steps`` are the same thing for the
     next steps: an instruction that follows from how the review ran rather than from what it
     found, which a model reading only the outcomes has no way to know it must give.
     """
@@ -111,8 +105,7 @@ async def summarise(
     return (
         ReportPayload(
             headline=headline,
-            summary=prose,
-            gaps=(*notes, *_lines(written.get("gaps")))[:MAX_LISTED],
+            summary=_with_notes(prose, notes),
             next_steps=(*steps, *_lines(written.get("next_steps")))[:MAX_LISTED],
         ),
         response,
@@ -165,15 +158,7 @@ def template(
 
     return ReportPayload(
         headline=headline,
-        summary=" ".join(sentences),
-        gaps=(
-            *notes,
-            *(
-                f"{outcome.check_id} is {outcome.final_status.value.replace('_', ' ')}"
-                f"{_because(outcome)}."
-                for outcome in waiting
-            ),
-        )[:MAX_LISTED],
+        summary=_with_notes(" ".join(sentences), notes),
         next_steps=(
             *steps,
             *(f"Review {outcome.check_id}, which failed." for outcome in failed),
@@ -186,10 +171,15 @@ def template(
     )
 
 
-def _because(outcome: CheckOutcome) -> str:
-    if not outcome.review_reasons:
-        return ""
-    return ": " + ", ".join(flag.value.replace("_", " ") for flag in outcome.review_reasons)
+def _with_notes(prose: str, notes: tuple[str, ...]) -> str:
+    """The written summary, with the caveats code established appended to it.
+
+    These had a list of their own on the report until the report stopped carrying one. They
+    are not findings a model chose to write and they are not instructions, so the summary is
+    where they belong: it is the first thing read, and step 19 traces any number in them
+    from there exactly as it did before.
+    """
+    return " ".join([prose, *notes[:MAX_LISTED]])
 
 
 def _lines(raw: object) -> tuple[str, ...]:

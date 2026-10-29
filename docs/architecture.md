@@ -7,7 +7,9 @@ write code in it is in [coding-guidelines.md](coding-guidelines.md).
 
 - `app/app.py` creates the FastAPI instance (`uvicorn app:app`, run from `app/`) and
   mounts `api.views.router` under `API_PREFIX` (`/api/jeve`). API docs are served under the
-  same prefix when `DOCS_URL` / `REDOC_URL` / `OPENAPI_URL` are set.
+  same prefix when `DOCS_URL` / `REDOC_URL` / `OPENAPI_URL` are set. It also adds
+  `CORSMiddleware` when `CORS_ORIGINS` names at least one browser origin, and leaves it off
+  entirely when none is configured.
 - `app/applifespan.py` runs on startup and shutdown: it applies `config.LOGGING_CONFIG`,
   then validates every context YAML and prompt and builds the review store, orchestrator and
   LLM provider once. A malformed business rule stops the service starting rather than
@@ -41,6 +43,16 @@ a routing rule.
   Each is single-shot, strictly schema-bound, and validated by a guardrail before its answer
   reaches a report. With no key the arithmetic runs in full and the result names what was
   not judged.
+- Step 18 also assembles a **category split work paper**: the working re-added row by row and
+  divided by the classes its own classification column holds, each column tied against the
+  total the file states above its header, the formula behind each column rewritten in the
+  preparer's column names, one row traced, and every check reported with the status step 16
+  gave it. Arithmetic and projection only - no model contributes a figure, and the tests
+  section is carried rather than recomputed. Nothing in it is named in code: row titles are
+  the preparer's headers, categories are whatever the column holds, and figures are formatted
+  from Excel's own format string, so a workbook with different classes on a differently
+  shaped tab needs no edit. It is written with the record, because its arithmetic is the
+  evidence.
 - Business knowledge is versioned YAML in `review/context/`, SHA-hashed into every review's
   audit trail and reuse key, so no stored result is served across a rule change.
 - Every model call is metered and recorded against the numbered step that made it, so
@@ -63,6 +75,9 @@ app/core/settings/
 - `FLAVOUR` comes from the process environment (default `dev`); an unknown value stops
   startup. The stag/prod images set it, and the deployment can override it.
 - Fields are UPPER_CASE and overridable with `APP_<FIELD>` variables; settings are frozen.
+- `CORS_ORIGINS` is the one list field read from the environment as a comma-separated
+  string rather than JSON (`NoDecode` plus a validator), because it is typed by hand into a
+  deployment's dashboard. Each flavour names its own frontend; the base default is empty.
 - The harness reads `config` in one place, `applifespan.py`, which passes every review
   limit into the orchestrator as a required keyword. Nothing under `app/review/` imports
   `config`, and no limit has a default there to drift from the field it mirrors.

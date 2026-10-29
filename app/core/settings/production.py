@@ -3,7 +3,7 @@
 from typing import ClassVar, Literal
 
 from core.settings.base import BaseConfig
-from core.settings.consts import Flavour, OpenAISettings
+from core.settings.consts import CorsOrigins, Flavour, OpenAISettings
 
 
 class ProductionConfig(BaseConfig):
@@ -12,6 +12,8 @@ class ProductionConfig(BaseConfig):
     FLAVOUR: ClassVar[Flavour] = Flavour.PROD
 
     DEBUG: Literal[False] = False
+
+    CORS_ORIGINS: CorsOrigins = ("https://jeve-fe-copy-rouge.vercel.app",)
 
     OPENAI_SETTINGS: OpenAISettings = {
         "BASE_URL": "https://openai-compliance-tool.services.ai.azure.com/openai/v1",

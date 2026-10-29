@@ -16,6 +16,7 @@ from api.consts import ErrorCode, JETypeSource, SSEEvent
 from review.models.context import OBSERVATION_AREA, JETypeContext
 from review.models.evidence import EvidenceItem
 from review.models.result import AICallRecord, ReviewResult
+from review.models.split_summary import SplitSummary
 from review.models.verdicts import CheckOutcome, ReviewFlag, Status, stricter
 
 ReviewState = Literal["queued", "running", "completed", "needs_review", "failed", "rejected"]
@@ -313,8 +314,21 @@ class ReviewDetail(BaseModel):
         ),
     )
     evidence: list[EvidenceView] = Field(default_factory=list)
+    split_summary: SplitSummary | None = Field(
+        default=None,
+        description=(
+            "The category split work paper: the entry's value re-added from the rows of the "
+            "working and divided by the classes the workbook itself sorts them into, with "
+            "the control totals it states above its own data, the live formulas behind each "
+            "column, a row traced step by step, and what each test found. None when the "
+            "workbook bound no table whose rows could be re-added. "
+            "Carried as the harness model rather than re-declared as a view. Every field on "
+            "it is already a reader's field - headers the preparer wrote, column letters, "
+            "amounts, row numbers - and a parallel set of nine identical classes here would "
+            "be the mapping layer that hides drift rather than prevents it."
+        ),
+    )
     needs_person: list[CheckView] = Field(default_factory=list)
-    gaps: list[str] = Field(default_factory=list)
     next_steps: list[str] = Field(default_factory=list)
     untraced_numbers: list[str] = Field(
         default_factory=list,
@@ -394,6 +408,10 @@ class ReviewDetail(BaseModel):
                 if outcome.area == OBSERVATION_AREA
             ],
             evidence=[EvidenceView.of(item) for item in result.evidence_register],
+            # Persisted with the record, so a re-read carries the whole work paper rather
+            # than the thinner projection the checks come back as. It holds no figure: it is
+            # its own arithmetic over the rows, plus the statuses step 16 reached.
+            split_summary=result.split_summary,
             needs_person=[stored_check(outcome, je_spec) for outcome in result.needs_person],
             cost=CostView(
                 ai_calls=len(result.audit.ai_calls),
@@ -402,7 +420,6 @@ class ReviewDetail(BaseModel):
                 duration_ms=result.audit.duration_ms,
                 calls=[AICallCostView.of(record) for record in result.audit.ai_calls],
             ),
-            gaps=list(report.gaps) if report else [],
             next_steps=list(report.next_steps) if report else [],
             untraced_numbers=list(report.untraced_numbers) if report else [],
             **extra,

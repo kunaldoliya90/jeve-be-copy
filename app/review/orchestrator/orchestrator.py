@@ -71,6 +71,7 @@ from review.models.result import (
 )
 from review.models.review_context import ReviewContext
 from review.models.sheet_map import SheetMap
+from review.models.split_summary import SplitSummary
 from review.models.verdicts import Challenge, CheckOutcome, Verdict, strictness
 from review.models.workbook import WorkbookProfile
 from review.models.workbook_data import WorkbookData
@@ -79,6 +80,7 @@ from review.orchestrator.planner import merge, plan_from_recipes, propose_steps,
 from review.orchestrator.rules import outcome_for
 from review.orchestrator.runner import run_checks
 from review.orchestrator.scoring import score_review
+from review.orchestrator.split_summary import build_split_summary
 from review.storage.reviews import ReviewStore, utc_now
 from review.tools.base import ToolContext
 from review.tools.entry import EvidenceRegisterTool, PeriodAgreementTool
@@ -169,6 +171,9 @@ class ReviewRun:
     score: Score | None = None
     report: ReportPayload | None = None
     map_verdict: MapVerdict | None = None
+    split_summary: SplitSummary | None = None
+    """The category split work paper, assembled at step 18. Held on the run so the live
+    view serves the same object the stored record carries."""
     layout_key: str = ""
     layout_hit: bool = False
     je_type: JETypeContext | None = None
@@ -849,8 +854,38 @@ class ReviewOrchestrator:
             else "completed"
         )
 
-        # --- step 18: AI-5 writes the report over scores that are already fixed ---
+        # --- step 18: the work paper, then the prose over scores that are already fixed ---
         await self._step(run, "18", "Writing the report")
+        # Built here rather than at step 13 because it reports the statuses step 16 reached
+        # alongside its own arithmetic, and it runs in the executor because it walks every
+        # row of the working a second time - on a 133k-row sheet that is not event-loop work.
+        run.split_summary = await loop.run_in_executor(
+            None,
+            partial(
+                build_split_summary,
+                data=data,
+                profile=measured,
+                sheet_map=binding.sheet_map,
+                rules=rules,
+                je_spec=je_spec,
+                pack=pack,
+                outcomes=outcomes,
+            ),
+        )
+        if run.split_summary is not None:
+            paper = run.split_summary
+            await self._emit(
+                run,
+                SSEEvent.STEP_FINISHED,
+                step="18",
+                name="Re-adding the working",
+                detail={
+                    "sheet": paper.basis.sheet,
+                    "rows_read": paper.basis.rows_read,
+                    "categories": len(paper.categories),
+                    "components": len(paper.components),
+                },
+            )
         report, written = await summarise(
             self._provider,
             self._prompts,
@@ -1063,6 +1098,7 @@ class ReviewOrchestrator:
             score=run.score,
             checks=tuple(outcomes.values()),
             evidence_register=run.context.evidence_register,
+            split_summary=run.split_summary,
             report=run.report or ReportPayload(headline=_headline_for(run)),
             audit=AuditTrail(
                 versions=dict(run.context.versions),

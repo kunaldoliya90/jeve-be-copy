@@ -1,9 +1,10 @@
 """Constants, enums and dict-setting keys used by the settings classes."""
 
 from enum import StrEnum
-from typing import Final, TypedDict
+from typing import Annotated, Final, TypedDict
 
 from pydantic import SecretStr
+from pydantic_settings import NoDecode
 
 
 class Flavour(StrEnum):
@@ -41,3 +42,19 @@ DOTENV_FILE: Final = ".env"
 DOTENV_ENCODING: Final = "utf-8"
 API_PREFIX_PATTERN: Final = r"^/[\w\-/]*[\w\-]$"
 LOG_FORMAT: Final = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
+
+# CORS. Only the origins differ per deployment, so they are a setting; the verbs are the
+# ones the API serves and the headers are whatever a browser sends with an upload.
+type CorsOrigins = Annotated[tuple[str, ...], NoDecode]
+"""Type of every flavour's ``CORS_ORIGINS``.
+
+``NoDecode`` keeps the environment value a raw string for ``BaseConfig`` to split on
+commas, and it has to be carried by each flavour that overrides the field: redeclaring it
+as a bare tuple would put JSON decoding back for that flavour only.
+"""
+
+CORS_ORIGIN_SEPARATOR: Final = ","
+CORS_ALLOW_METHODS: Final = ("GET", "POST", "DELETE", "OPTIONS")
+CORS_ALLOW_HEADERS: Final = ("*",)
+CORS_ALLOW_CREDENTIALS: Final = True
+CORS_PREFLIGHT_MAX_AGE_S: Final = 600

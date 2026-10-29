@@ -79,14 +79,25 @@ def test_template_names_the_weakest_area_and_quotes_its_reason() -> None:
     assert "provisional" in report.summary
 
 
-def test_template_lists_unproven_checks_as_gaps_and_failures_as_next_steps() -> None:
+def test_template_lists_failures_and_the_waiting_count_as_next_steps() -> None:
     report = template(_score(), _outcomes(), "head")
 
-    assert report.gaps == ("population_complete is unable to validate: missing verdict.",)
     assert report.next_steps == (
         "Review je_balances, which failed.",
         "Settle the 1 check(s) waiting on a person above.",
     )
+
+
+def test_template_appends_the_caveats_code_established_to_the_summary() -> None:
+    """They had a list of their own until the report stopped carrying one.
+
+    A caveat a reviewer must see cannot depend on a model repeating it, so code writes it
+    either way - and with no list left to write it into, it belongs in the prose read first.
+    """
+    report = template(_score(), _outcomes(), "head", notes=("The entry type is uncorroborated.",))
+
+    assert report.summary.endswith("The entry type is uncorroborated.")
+    assert report.summary.startswith("3 checks ran on this entry")
 
 
 def test_template_puts_the_steps_code_insists_on_first() -> None:
@@ -101,7 +112,6 @@ def test_template_never_quotes_a_number_it_was_not_given() -> None:
     report = template(_score(total=0.0), {}, "head")
 
     assert report.summary.startswith("0 checks ran on this entry: 0 failed and 0 need a person")
-    assert report.gaps == ()
     assert report.next_steps == ()
 
 
@@ -115,7 +125,7 @@ def test_template_survives_a_score_with_no_areas() -> None:
 
 def test_summary_schema_is_strict_so_the_model_cannot_add_fields() -> None:
     assert SUMMARY_SCHEMA["additionalProperties"] is False
-    assert set(SUMMARY_SCHEMA["required"]) == {"summary", "gaps", "next_steps"}
+    assert set(SUMMARY_SCHEMA["required"]) == {"summary", "next_steps"}
 
 
 def test_the_template_carries_no_financial_figures_of_its_own() -> None:

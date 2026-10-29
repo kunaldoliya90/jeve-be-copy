@@ -60,27 +60,42 @@ def diagnose(
     else:  # pragma: no cover - the orchestrator calls this only on the two cases above
         headline = "This review ended before any check ran."
 
-    gaps: list[str] = []
-    if identification is not None:
-        gaps.extend(
-            f"Ruled out: {reason}." for reason in identification.rejected[:MAX_LISTED_CANDIDATES]
-        )
-        if identification.unobservable:
-            gaps.append(
-                "No rule here can evaluate: "
-                f"{', '.join(identification.unobservable)}. These were treated as absent."
-            )
-    gaps.extend(_unbound_gaps(binding))
-    gaps.extend(_header_gaps(binding))
-
     return ReportPayload(
         headline=headline,
         summary=_summary(binding, profile, unknown_type=unknown_type),
-        gaps=tuple(gaps),
-        next_steps=tuple(
-            _next_steps(binding, declared=declared, catalogue=catalogue, unknown_type=unknown_type)
+        next_steps=(
+            *_findings(binding),
+            *_next_steps(
+                binding, declared=declared, catalogue=catalogue, unknown_type=unknown_type
+            ),
         ),
     )
+
+
+def _findings(binding: BindResult) -> list[str]:
+    """What stopped the review, ahead of what to do about it.
+
+    These were their own list on the report — the one headed "what could not be validated" —
+    and they are the whole reason this module exists: without them a workbook nobody could
+    read reports no score, no checks and no reason. With that list gone they lead the next
+    steps instead, which is where a reader looking for what to do about the file already
+    goes. Stating the obstacle before the instruction keeps the pair readable: a reader told
+    to add a header spelling first has to know which header went unrecognised.
+    """
+    identification = binding.identification
+    findings: list[str] = []
+    if identification is not None:
+        findings.extend(
+            f"Ruled out: {reason}." for reason in identification.rejected[:MAX_LISTED_CANDIDATES]
+        )
+        if identification.unobservable:
+            findings.append(
+                "No rule here can evaluate: "
+                f"{', '.join(identification.unobservable)}. These were treated as absent."
+            )
+    findings.extend(_unbound_gaps(binding))
+    findings.extend(_header_gaps(binding))
+    return findings
 
 
 def _summary(binding: BindResult, profile: WorkbookProfile, *, unknown_type: bool) -> str:

@@ -113,20 +113,28 @@ def test_config_openai_settings_are_read_from_env_json(
     assert "sk-test" not in repr(config)
 
 
-def test_config_cors_allow_origins_defaults_to_none() -> None:
-    assert StagingConfig().CORS_ALLOW_ORIGINS == []
-
-
-def test_config_cors_allow_origins_are_read_from_env_json(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("APP_CORS_ALLOW_ORIGINS", '["https://jeve.example.test"]')
-
-    assert StagingConfig().CORS_ALLOW_ORIGINS == ["https://jeve.example.test"]
-
-
 def test_config_flavour_overrides_leave_base_defaults_unchanged() -> None:
     DevelopmentConfig()
 
     assert BaseConfig.model_fields["DEBUG"].default is False
     assert BaseConfig.model_fields["DOCS_URL"].default is None
+
+
+@pytest.mark.parametrize("config_class", [DevelopmentConfig, StagingConfig, ProductionConfig])
+def test_config_splits_cors_origins_on_commas(
+    monkeypatch: pytest.MonkeyPatch, config_class: type[BaseConfig]
+) -> None:
+    monkeypatch.setenv("APP_CORS_ORIGINS", " https://app.example.com , http://localhost:3000 ,, ")
+
+    config = config_class()
+
+    assert config.CORS_ORIGINS == ("https://app.example.com", "http://localhost:3000")
+
+
+@pytest.mark.parametrize("config_class", [StagingConfig, ProductionConfig])
+def test_deployed_flavours_name_a_frontend_origin(config_class: type[BaseConfig]) -> None:
+    """A deployment that names none would serve a frontend it then refuses to answer."""
+    origins = config_class().CORS_ORIGINS
+
+    assert origins
+    assert all(origin.startswith("https://") for origin in origins)

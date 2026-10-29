@@ -76,10 +76,9 @@ def test_thousands_separators_are_matched_as_the_same_number() -> None:
     assert final_check(report, _score(), _pack()).untraced_numbers == ()
 
 
-def test_gaps_and_next_steps_are_traced_as_well_as_the_summary() -> None:
+def test_the_next_steps_are_traced_as_well_as_the_summary() -> None:
     report = ReportPayload(
-        summary="Reperformed in full.",
-        gaps=("A balance of 99999.99 could not be agreed.",),
+        summary="Reperformed in full, but a balance of 99999.99 could not be agreed.",
         next_steps=("Obtain the 88888 supporting schedule.",),
     )
 
