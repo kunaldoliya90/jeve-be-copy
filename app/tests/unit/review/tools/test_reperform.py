@@ -317,3 +317,62 @@ def test_one_identity_may_be_named_as_a_string_or_a_list(identities: str | list[
 
     assert len(figures) == 1
     assert figures[0].ok is True
+
+
+BLANK_IS_ZERO = RowIdentitySpec(
+    id="cp_movement_blank_is_zero",
+    label="CP earned minus taken against the stated balance",
+    expression="coalesce(cp_earned, 0) - coalesce(cp_taken, 0)",
+    against="cp_balance",
+    against_blank_is_zero=True,
+)
+BLANK_IS_UNKNOWN = BLANK_IS_ZERO.model_copy(
+    update={"id": "cp_movement_blank_is_unknown", "against_blank_is_zero": False}
+)
+
+
+def test_a_blank_compared_column_is_skipped_by_default() -> None:
+    """The default, and the reason the flag has to be asked for: a blank is normally a figure
+    the workbook does not state, and reading it as a nought would invent an answer."""
+    records: Records = [
+        ["E1", None, None, None, Decimal(5), Decimal(5), None],
+        ["E2", None, None, None, Decimal(8), Decimal(3), Decimal(5)],
+    ]
+
+    figure = run(context(records, BLANK_IS_UNKNOWN), "cp_movement_blank_is_unknown")[0]
+
+    assert figure.coverage is not None
+    assert figure.coverage.rows_total == 2
+    assert figure.coverage.rows_bound == 1, "the blank row is not compared"
+    assert figure.ok is False, "an uncovered row can never support a pass"
+
+
+def test_a_blank_compared_column_declared_nil_is_compared_as_zero() -> None:
+    """What the flag buys, and it is coverage rather than leniency. The row still has to
+    agree; it is simply no longer skipped, so a column the preparer legitimately leaves
+    empty stops making the check permanently partial on a clean workbook."""
+    records: Records = [
+        ["E1", None, None, None, Decimal(5), Decimal(5), None],
+        ["E2", None, None, None, Decimal(8), Decimal(3), Decimal(5)],
+    ]
+
+    figure = run(context(records, BLANK_IS_ZERO), "cp_movement_blank_is_zero")[0]
+
+    assert figure.coverage is not None
+    assert figure.coverage.rows_total == 2
+    assert figure.coverage.rows_bound == 2
+    assert figure.coverage.rows_tied == 2
+    assert figure.ok is True
+
+
+def test_a_blank_declared_nil_still_fails_where_the_arithmetic_says_otherwise() -> None:
+    """The flag must not become a way to pass. A blank read as zero against a computed
+    non-zero is an exception, cited like any other."""
+    records: Records = [["E1", None, None, None, Decimal(8), Decimal(3), None]]
+
+    figure = run(context(records, BLANK_IS_ZERO), "cp_movement_blank_is_zero")[0]
+
+    assert figure.ok is False
+    assert figure.exception_count == 1
+    assert figure.samples[0]["expected"] == Decimal(5)
+    assert figure.samples[0]["actual"] == Decimal(0)

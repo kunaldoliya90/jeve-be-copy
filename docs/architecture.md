@@ -45,7 +45,12 @@ conclusion comes from a tool or a routing rule.
   not judged.
 - Step 13c **rebuilds the entry from its own inputs**: the formula the business approved,
   declared in the JE type file over named inputs with their units and sources, parsed at
-  startup and evaluated per record in Decimal by `review/recalc/`. The recomputed total is
+  startup and evaluated per record in Decimal by `review/recalc/`. It reads **source columns
+  rather than the stated figures they produce**, in stages, and each stage is also compared
+  against the column the workbook states its own answer for that quantity in - so an edit to
+  a source column moves the entry's own number, and an edit to a stated one surfaces as a
+  stage that no longer agrees. The grammar is arithmetic, comparisons and six functions,
+  parsed and never evaluated as Python. The recomputed total is
   set against the booked amount, read from the posted entry's own lines - a different table
   on a different tab, so the two sides are independent and their difference means something.
   Every record that does not reconcile becomes a **citation**: the row, the cell the file

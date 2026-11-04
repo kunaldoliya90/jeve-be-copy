@@ -20,6 +20,7 @@ from review.context.binder import bind_sheet_map
 from review.context.loader import ContextLoader
 from review.extract.structure_context import build_structure_context, layout_fingerprint
 from review.intake.gatekeeper import validate_upload
+from review.models.evidence import Figure
 from review.models.recalculation import EntryRecalculation, FormulaFault
 from review.models.split_summary import SplitSummary
 from review.models.verdicts import Status
@@ -27,7 +28,9 @@ from review.models.workbook import WorkbookProfile
 from review.models.workbook_data import WorkbookData
 from review.orchestrator.split_summary import build_split_summary
 from review.recalc.engine import recalculate
-from review.tools.base import ToolContext
+from review.tools.base import ToolContext, run_tool
+from review.tools.registry import TOOLS
+from review.tools.reperform import TOOL_NAME as REPERFORM
 from tests.golden.conftest import SAMPLES
 
 pytestmark = pytest.mark.golden
@@ -432,25 +435,29 @@ Read off the files, independent of the formula entirely.
 """
 
 RECOMPUTED = {
-    "236264.xlsx": Decimal("28672591.21"),
+    "236264.xlsx": Decimal("28672591.23"),
     "305800.xlsx": Decimal("27905812.63"),
 }
-"""What the French formula (CP provision plus a twelfth of the RTT accrual, version 9)
-rebuilds. Not exactly ``BOOKED``: rounding each record's twelfth of its RTT accrual to the
-cent before summing leaves a few cents of dust on 236264.xlsx (-0.03, every row's own
-difference still inside the 0.01 row tolerance, so nothing is cited for it) and 305800.xlsx
-is short the two employees with no CP or RTT data at all (-0.01; see
-``test_every_employee_row_is_rebuilt_or_named_as_incomplete``). Both are comfortably inside
-the business's entry-level tolerance, widened from 0.1% to 1% (2026-11-04) specifically for
-the headroom this rounding dust needs on a smaller entry of this type than these two.
+"""What the French formula rebuilds - version 11, which takes the CP provision plus a twelfth
+of an RTT accrual it **rebuilds from the days and the rate** rather than reads out of the
+column the workbook states it in.
 
-935348.xlsb is not here: the global MSVacation model carries neither ``cp_provision`` nor
-``rtt_accrual`` - that convention is French-specific - so its entry cannot be recalculated
-under this formula at all. See ``test_the_global_workbook_cannot_be_recalculated``. Version 8
-and earlier used ``fte_accrual + non_fte_accrual`` instead, which both the French and the
-global model carry, and reproduced all three entries to the cent; the business asked for the
-CP-provision figure to be the headline instead (2026-11-04), trading that universal coverage
-away on purpose - the FTE/non-FTE split still corroborates below, just no longer decisively.
+Not exactly ``BOOKED``, for two reasons that are both the data rather than the arithmetic.
+Rounding each record's twelfth to the cent before summing leaves dust: a single cent on
+236264.xlsx, where version 9 - reading the stated RTT accrual, already rounded in the file -
+left three, because a product recomputed in Decimal keeps precision the column had thrown
+away. 305800.xlsx is a cent short for an unrelated reason: the two employees with no CP or
+RTT data at all (see ``test_every_employee_row_is_rebuilt_or_named_as_incomplete``). Both are
+comfortably inside the business's entry-level tolerance, widened from 0.1% to 1%
+(2026-11-04).
+
+935348.xlsb is not here: the global MSVacation model carries none of these columns - that
+convention is French-specific - so its entry cannot be recalculated under this formula at
+all. See ``test_the_global_workbook_cannot_be_recalculated``. Version 8 and earlier used
+``fte_accrual + non_fte_accrual`` instead, which both the French and the global model carry,
+and reproduced all three entries to the cent; the business asked for the CP-provision figure
+to be the headline instead (2026-11-04), trading that universal coverage away on purpose -
+the FTE/non-FTE split still corroborates below, just no longer decisively.
 """
 
 
@@ -480,6 +487,35 @@ def _recalculation(
     return paper
 
 
+def _reperformed(
+    name: str,
+    identity: str,
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> Figure:
+    """One declared identity, re-performed over a real working through the real tool.
+
+    Through ``run_tool`` rather than the tool's own ``run`` so the figure is capped and
+    shaped exactly as a review's would be - a golden assertion on a figure built a different
+    way would not be an assertion about what a reviewer sees.
+    """
+    data, measured = sample_data(name), sample_profile(name)
+    loader = ContextLoader()
+    loader.load()
+    binding = bind_sheet_map(measured, data, loader.by_precedence())
+    ctx = ToolContext(
+        data=data,
+        sheet_map=binding.sheet_map,
+        rules=loader.rules,
+        defects=measured.defects,
+        formula_shapes=measured.formula_shapes,
+        je_type_args={"reperformance": loader.je_type(JE_TYPE).reperformance},
+    )
+    figures = run_tool(TOOLS[REPERFORM], ctx, "a_check", table="calculation", identities=[identity])
+    assert len(figures) == 1, f"{identity} produced {len(figures)} figures"
+    return figures[0]
+
+
 @pytest.mark.parametrize("name", XLSX)
 def test_the_entry_rebuilds_close_to_the_amount_that_was_posted(
     name: str,
@@ -503,22 +539,27 @@ def test_the_global_workbook_cannot_be_recalculated_under_the_french_formula(
     sample_data: Callable[[str], WorkbookData],
     sample_profile: Callable[[str], WorkbookProfile],
 ) -> None:
-    """935348.xlsb carries no ``cp_provision`` or ``rtt_accrual`` column at all - the global
-    MSVacation model does not use the French CP/RTT convention this formula now states.
+    """935348.xlsb carries neither a CP provision nor the RTT days the leg is rebuilt from -
+    the global MSVacation model does not use the French CP/RTT convention this formula states.
 
     Inconclusive, never a failure: nothing here claims the entry's value is wrong, only that
-    it cannot be measured under this basis. The formula is shown unsubstituted for the same
+    it cannot be measured under this basis. Its inputs are shown unsubstituted for the same
     reason a reviewer is shown anything else that could not be bound - there is no column to
-    read a header from.
+    read a header from. A declared *stage* still shows by its own name, because the business
+    named that one rather than the workbook.
     """
     paper = _recalculation("935348.xlsb", sample_data, sample_profile)
 
     assert paper.status is Status.UNABLE_TO_VALIDATE
     assert paper.rows_total == 0
     assert paper.recomputed_total == Decimal(0)
+    # The note names the required inputs nothing could be bound for. ``daily_rate`` is not
+    # among them: this model does carry a "Daily Salary" column, which is exactly why the
+    # missing ones have to be named individually rather than the basis reported as wholly
+    # foreign to the file.
     assert "cp_provision" in paper.notes[0]
-    assert "rtt_accrual" in paper.notes[0]
-    assert paper.basis.formula_in_headers == "cp_provision + (rtt_accrual / 12)"
+    assert "months_to_accrue" in paper.notes[0]
+    assert paper.basis.formula_in_headers == "cp_provision + Rebuilt RTT accrual / 12"
 
 
 ROWS_RECOMPUTED = {"236264.xlsx": 2_280, "305800.xlsx": 2_271}
@@ -580,10 +621,113 @@ def test_the_fte_split_still_corroborates_as_a_leg_not_the_headline(
     assert corroboration.impact == Decimal(0)
 
 
+@pytest.mark.parametrize("name", XLSX)
+@pytest.mark.parametrize("term", ["earned_rtt_days", "unused_rtt_days"])
+def test_the_rebuilt_leave_days_agree_with_the_columns_the_file_states_them_in(
+    term: str,
+    name: str,
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    """The two stages version 11 added, and the reason the formula was moved back a level.
+
+    ``earned_rtt_days`` prorates the yearly entitlement over the months worked and is set
+    against the workbook's own earned-days column, which nothing in the harness read at all
+    before this - an edit to it was invisible. ``unused_rtt_days`` takes the days taken off
+    that and is set against the stated balance, reproducing the file's own convention that an
+    employee who has taken none of their RTT accrues none of it. Both tie on every record of
+    both periods, which is what makes them safe to decide the headline figure with.
+    """
+    paper = _recalculation(name, sample_data, sample_profile)
+
+    corroboration = next(item for item in paper.corroborations if item.term == term)
+    assert corroboration.rows_compared == CALCULATION_ROWS[name]
+    assert corroboration.agrees is True
+    assert corroboration.impact == Decimal(0)
+
+
+@pytest.mark.parametrize("name", XLSX)
+def test_each_stage_of_the_formula_reads_back_in_the_preparers_own_columns(
+    name: str,
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    """Every column a stage reads is named by its own header, on both layouts.
+
+    Asserted on the names rather than the whole string: pinning the exact text would make
+    this a test of the business's wording rather than of the substitution.
+    """
+    paper = _recalculation(name, sample_data, sample_profile)
+    stages = {item.id: item.in_headers for item in paper.components}
+
+    assert "Acquis\nRTT" in stages["earned_rtt_days"]
+    assert "Months to Accrue" in stages["earned_rtt_days"]
+    assert "Pris\nRTT" in stages["unused_rtt_days"]
+    assert "Daily Salary (RTT Rate)" in stages["rtt_amount"]
+    # A stage built on an earlier stage names it the way the rest of the paper does.
+    assert "RTT days earned" in stages["unused_rtt_days"]
+    assert "Unused RTT days" in stages["rtt_amount"]
+    # No id the engine knows a name by may survive into what a reviewer reads.
+    for expression in stages.values():
+        for name_in_code in ("rtt_entitlement_days", "daily_rate", "earned_rtt_days"):
+            assert name_in_code not in expression
+
+
 FORMULA_IN_HEADERS = {
-    "236264.xlsx": "Total Provision\nCP + (RTT Accrual Amount / 12)",
-    "305800.xlsx": "Total Provision\nCP + (RTT Accrual Amount / 12)",
+    "236264.xlsx": "Total Provision\nCP + Rebuilt RTT accrual / 12",
+    "305800.xlsx": "Total Provision\nCP + Rebuilt RTT accrual / 12",
 }
+"""Every name a reader sees is one somebody wrote down. An input shows as the header the
+preparer wrote; ``rtt_amount`` is a *derived term* rather than a column since version 11, so
+it has no header and shows as the short label the business gave the stage instead. Still a
+substitution and never a translation - nothing here invents prose for an arbitrary formula.
+
+The alternative, inlining the whole chain into one line, was rejected as unreadable; each
+stage carries its own substituted expression instead (``RecalcComponent.in_headers``,
+asserted below). So was naming the rebuilt figure after the column it is compared against,
+which would name it for the very thing it exists to be independent of."""
+
+
+FORMULA_EXPANDED = (
+    "Total Provision\nCP + ((if(coalesce(Pris\nRTT, 0) == 0, 0, "
+    "max((coalesce(Acquis\nRTT, 0) / 12 * Months to Accrue) - Pris\nRTT, 0))) "
+    "* Daily Salary (RTT Rate)) / 12"
+)
+"""The whole formula written out, down to the columns - the same on both French layouts.
+
+This is what a reviewer reads first, and it is the only form that names the columns: the
+staged form says "Rebuilt RTT accrual", which is a stage rather than a column and reads as
+though the figure were still being lifted straight out of the workbook.
+"""
+
+
+@pytest.mark.parametrize("name", XLSX)
+def test_the_formula_is_written_out_down_to_the_columns_it_reads(
+    name: str,
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    paper = _recalculation(name, sample_data, sample_profile)
+
+    assert paper.basis.formula_expanded == FORMULA_EXPANDED
+    # No stage and no declared input id may survive into what a reviewer reads first.
+    for name_in_code in ("rtt_amount", "unused_rtt_days", "earned_rtt_days", "daily_rate"):
+        assert name_in_code not in paper.basis.formula_expanded
+
+
+def test_the_expansion_follows_the_workbook_rather_than_the_entry_type(
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    """The global model binds none of the French columns but does carry a daily salary, and
+    the expansion shows exactly that: its own header where one was bound, the business's own
+    id where none was. A formula that read the same on every file would not be reading this
+    one."""
+    paper = _recalculation("935348.xlsb", sample_data, sample_profile)
+
+    assert "Daily Salary" in paper.basis.formula_expanded
+    assert "Daily Salary (RTT Rate)" not in paper.basis.formula_expanded
+    assert "cp_provision" in paper.basis.formula_expanded
 
 
 @pytest.mark.parametrize("name", XLSX)
@@ -632,10 +776,21 @@ def test_no_citation_or_sample_carries_an_employee_identifier(
 # ------------------------------- step 13c: the formulas the workbooks themselves apply
 
 
-AUDITED_COLUMNS = {"236264.xlsx": 6, "305800.xlsx": 6, "935348.xlsb": 2}
+AUDITED_COLUMNS = {"236264.xlsx": 12, "305800.xlsx": 12, "935348.xlsb": 2}
 """Columns whose formulas are examined on each file: every one the business declares
 arithmetic for that the workbook actually binds, plus the posted line the booked amount is
-read from. Two on the binary model, which binds neither leave leg."""
+read from. Two on the binary model, which binds neither leave leg.
+
+Six on the French files until the working's own internal arithmetic was declared, which
+doubled it: an identity over a column is what puts that column in front of the audit, so
+declaring the charge amounts, the two provision totals and the prior period's balance
+brought their formulas - or, as it turns out on both files, their absence - into scope too.
+"""
+
+AUDITED_FAULT_COLUMNS = {"AC", "AH", "G", "K", "M", "O", "P", "S", "T", "U", "V"}
+"""Every column the audit has an opinion about, and on both French periods the opinion is the
+same one: stated, not calculated. The six added with the internal identities behave exactly
+like the five that were already there, which is the finding rather than a surprise."""
 
 
 @pytest.mark.parametrize("name", XLSX)
@@ -656,7 +811,7 @@ def test_the_working_states_its_amounts_rather_than_calculating_them(
     assert paper.formula_columns_audited == AUDITED_COLUMNS[name]
     faults = {finding.fault for finding in paper.formula_findings}
     assert faults == {FormulaFault.NOT_CALCULATED}, faults
-    assert {finding.column for finding in paper.formula_findings} == {"AH", "AC", "K", "M", "S"}
+    assert {finding.column for finding in paper.formula_findings} == AUDITED_FAULT_COLUMNS
     assert all(finding.rows_affected > 1_500 for finding in paper.formula_findings)
 
 
@@ -710,3 +865,45 @@ def test_the_preparers_own_subtotal_row_is_never_read_as_the_columns_arithmetic(
         if finding.fault is FormulaFault.DIFFERENT_INPUTS
     ]
     assert wrong == [], [(finding.cell, finding.formula) for finding in wrong]
+
+
+# ---------------------------------------- the working's own internal arithmetic
+
+
+INTERNAL_IDENTITIES = [
+    "cp_charges_amount",
+    "cp_provision_total_sums",
+    "rtt_provision_values_the_balance",
+    "rtt_charges_amount",
+    "rtt_provision_total_sums",
+    "cp_prior_movement",
+]
+"""The six identities covering the columns the posted figure is *not* built from.
+
+None of them reaches the entry - it excludes employer social charges - so each exists purely
+so that an edit to a column nothing reads is still an edit something notices. Before they
+were declared, "Provision Totale" could be moved by a million euros with every check passing.
+
+Every one of them is declared ``against_blank_is_zero``, which is what makes full coverage
+reachable at all: these columns are left empty for an employee the provision does not apply
+to, and a skipped row is an uncovered row, so without it each would report partial on a
+workbook with nothing wrong with it. That is precisely what this test pins.
+"""
+
+
+@pytest.mark.parametrize("name", XLSX)
+@pytest.mark.parametrize("identity", INTERNAL_IDENTITIES)
+def test_the_workings_internal_arithmetic_ties_on_every_record(
+    identity: str,
+    name: str,
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    """Complete coverage as well as agreement, on both periods. Either alone is not a pass."""
+    figure = _reperformed(name, identity, sample_data, sample_profile)
+
+    assert figure.coverage is not None
+    assert figure.coverage.rows_total == CALCULATION_ROWS[name]
+    assert figure.coverage.rows_bound == CALCULATION_ROWS[name], "a skipped row is uncovered"
+    assert figure.coverage.rows_tied == CALCULATION_ROWS[name]
+    assert figure.ok is True

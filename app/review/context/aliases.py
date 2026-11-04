@@ -42,9 +42,30 @@ ALIASES: Final[dict[str, tuple[str, ...]]] = {
     "cp_provision": ("total provision cp",),
     "cp_provision_prior": ("provision cp n 1",),
     "cp_provision_current": ("provision cp n",),
-    "employer_charges": ("montant charges patronales", "taux charges patronales"),
+    # The prior period's own earned/taken/balance trio, beside the current period's above.
+    # Declared so the balance the file states for it is re-performed rather than trusted.
+    "cp_earned_prior": ("acquis cp n 1",),
+    "cp_taken_prior": ("pris cp n 1",),
+    "cp_balance_prior": ("solde cp n 1",),
+    # A rate and an amount, not one meaning. "employer_charges" carried both phrases, so
+    # first-match-wins bound the *rate* column and the amount was left unbound and
+    # unchecked - the fourth instance of this defect, after cp_provision, rtt_balance and
+    # rtt_earned. The entry excludes employer charges, so neither column reaches the posted
+    # figure; both are re-performed anyway, because an edit to a column nothing reads is
+    # still an edit to the working.
+    "employer_charge_rate": ("taux charges patronales",),
+    "employer_charge_amount": ("montant charges patronales",),
+    "cp_provision_with_charges": ("provision totale",),
     # the RTT leg
-    "rtt_earned": ("acquis rtt", "earned rtt days"),
+    # "earned rtt days" is deliberately absent from rtt_earned: both French files carry
+    # "Acquis RTT" (the yearly entitlement) *and* "Earned RTT Days" (that entitlement
+    # prorated over the months worked), and first-match-wins made one meaning stand for two
+    # different quantities. The recalculation rebuilds the prorated figure from the yearly
+    # one, so it needs to read the first and compare against the second; with both behind
+    # one meaning it would have compared a column against itself. Same defect, same fix, as
+    # "provision cp n" against "total provision cp" above.
+    "rtt_earned": ("acquis rtt",),
+    "rtt_earned_days": ("earned rtt days",),
     "rtt_taken": ("pris rtt",),
     "rtt_balance": ("solde rtt",),
     # Kept apart from rtt_balance and rtt_provision on purpose: these three are the inputs
@@ -52,6 +73,11 @@ ALIASES: Final[dict[str, tuple[str, ...]]] = {
     # would re-perform a different sum that happens to look similar.
     "rtt_balance_days": ("balance rtt days",),
     "rtt_accrual": ("rtt accrual amount",),
+    # The RTT leg's own provision trio: the base, its employer charges, and the total of the
+    # two. ``rtt_provision`` is the total, and it is the one the discriminators test for, so
+    # the base and the charge amount are named separately rather than folded into it.
+    "rtt_provision_base": ("provision rtt",),
+    "rtt_employer_charge_amount": ("montant charges patronales rtt",),
     "rtt_provision": ("provision totale rtt",),
     "daily_salary_rate": ("daily salary rtt rate", "daily salary", "daily rate"),
     "months_to_accrue": ("months to accrue",),

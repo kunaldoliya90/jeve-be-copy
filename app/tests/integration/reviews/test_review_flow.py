@@ -926,8 +926,9 @@ def test_the_plan_is_built_from_the_recipes_and_every_step_survives_checking(
     stored = store_of(api).read(review_id)
     assert stored is not None
     # Every check the context file states produced an outcome, which is only true if every
-    # planned step ran.
-    assert len(stored.checks) == 24
+    # planned step ran. Six of the thirty cover the working's own internal arithmetic - the
+    # columns the posted figure is not built from - and they are planned like any other.
+    assert len(stored.checks) == 30
 
 
 # ---------------------------------------------------------------- what the review cost
@@ -1309,10 +1310,13 @@ def test_the_entry_is_rebuilt_from_its_inputs_and_tied_to_the_posting(
     """The feature's own measure, through the API a browser codes against.
 
     ``28,672,591.24`` is the debit total of this workbook's posting tab. The rebuild (CP
-    provision plus a twelfth of the RTT accrual, version 9) comes to 28,672,591.21: three
-    cents of per-record rounding dust from dividing the RTT accrual by 12 and rounding to the
-    cent before summing, comfortably inside the entry tolerance (widened from 0.1% to 1% on
-    2026-11-04) and never once outside the 0.01 row tolerance, so nothing is cited for it.
+    provision plus a twelfth of an RTT accrual rebuilt from the days and the rate, version
+    11) comes to 28,672,591.23: a cent of per-record rounding dust from dividing by 12 and
+    rounding to the cent before summing, comfortably inside the entry tolerance (widened from
+    0.1% to 1% on 2026-11-04) and never once outside the 0.01 row tolerance, so nothing is
+    cited for it. Version 9 read the RTT accrual out of the column the file states it in and
+    left three cents instead: a product recomputed in Decimal keeps precision the stated
+    column had already rounded away.
     """
     review_id = _upload(api, "236264.xlsx", workbook).json()["review_id"]
     with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
@@ -1321,9 +1325,9 @@ def test_the_entry_is_rebuilt_from_its_inputs_and_tied_to_the_posting(
     paper = api.get(f"{REVIEWS}{review_id}/").json()["recalculation"]
     assert paper is not None, "a workbook that bound its working must be recalculated"
 
-    assert Decimal(paper["recomputed_total"]) == Decimal("28672591.21")
+    assert Decimal(paper["recomputed_total"]) == Decimal("28672591.23")
     assert Decimal(paper["booked"]["total"]) == Decimal("28672591.24")
-    assert Decimal(paper["difference"]) == Decimal("-0.03")
+    assert Decimal(paper["difference"]) == Decimal("-0.01")
     assert paper["within_tolerance"] is True
     assert paper["status"] == "pass"
     assert paper["rows_total"] == 2_280
@@ -1333,8 +1337,17 @@ def test_the_entry_is_rebuilt_from_its_inputs_and_tied_to_the_posting(
 
     basis = paper["basis"]
     assert basis["sheet"] == "GPAY"
-    assert basis["formula"] == "cp_provision + (rtt_accrual / 12)"
-    assert basis["formula_in_headers"] == "Total Provision\nCP + (RTT Accrual Amount / 12)"
+    assert basis["formula"] == "cp_provision + rtt_amount / 12"
+    # What a reviewer reads first: the whole thing written out, down to the columns this
+    # workbook uses. The staged form names a stage, and a stage has no column.
+    assert basis["formula_expanded"].startswith("Total Provision\nCP + ((if(coalesce(")
+    assert "Acquis\nRTT" in basis["formula_expanded"]
+    assert "Months to Accrue" in basis["formula_expanded"]
+    assert "Daily Salary (RTT Rate)" in basis["formula_expanded"]
+    assert "rtt_amount" not in basis["formula_expanded"]
+    # ``rtt_amount`` is a declared stage rather than a column since version 11, so there is
+    # no header to substitute for it; each stage carries its own substituted expression.
+    assert basis["formula_in_headers"] == "Total Provision\nCP + Rebuilt RTT accrual / 12"
     assert Decimal(basis["tolerance_pct"]) == Decimal("1")
     assert basis["provisional_basis"] is True, "the business has not signed the basis off"
 
@@ -1396,9 +1409,9 @@ def test_the_stream_announces_the_recalculation_before_and_after_it_runs(
 
     assert finished["detail"]["status"] == "pass"
     assert finished["detail"]["rows_recomputed"] == 2_280
-    assert Decimal(str(finished["detail"]["difference"])) == Decimal("-0.03")
+    assert Decimal(str(finished["detail"]["difference"])) == Decimal("-0.01")
     assert finished["detail"]["within_tolerance"] is True
-    assert finished["detail"]["formula"] == "Total Provision\nCP + (RTT Accrual Amount / 12)"
+    assert finished["detail"]["formula"] == "Total Provision\nCP + Rebuilt RTT accrual / 12"
 
 
 def test_the_recalculation_survives_a_re_read_of_the_stored_record(
@@ -1482,9 +1495,7 @@ def test_rows_can_be_filtered_to_only_the_ones_that_changed(
 def test_rows_can_be_sorted_worst_first(api: TestClient, workbook: bytes) -> None:
     review_id = _finish(api, workbook)
 
-    page = api.get(
-        f"{REVIEWS}{review_id}/recalculation/rows/?sort=-difference&limit=20"
-    ).json()
+    page = api.get(f"{REVIEWS}{review_id}/recalculation/rows/?sort=-difference&limit=20").json()
     magnitudes = [abs(Decimal(row["difference"])) for row in page["rows"] if row["difference"]]
     assert magnitudes == sorted(magnitudes, reverse=True)
 

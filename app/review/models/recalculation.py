@@ -339,7 +339,10 @@ class RecalcComponent(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: str = Field(..., min_length=1)
-    label: str = Field(default="", description="The column header or the declared description")
+    label: str = Field(default="", description="A short name for the stage, as declared")
+    description: str = Field(
+        default="", description="What the stage is and why, in the business's own words"
+    )
     expression: str = Field(default="", description="How it is derived, as the JE type states it")
     in_headers: str = Field(
         default="", description="That expression with each input replaced by its header text"
@@ -453,6 +456,16 @@ class RecalcBasis(BaseModel):
     )
     stated_header: str = Field(default="", description="That column's header, as written")
     formula: str = Field(..., min_length=1, description="As the JE type declares it")
+    formula_expanded: str = Field(
+        default="",
+        description=(
+            "The formula with every derived stage written out, down to the columns "
+            "themselves, in the headers this workbook uses. The one form that shows a "
+            "reader which columns the arithmetic actually reads: the staged form below "
+            "names a stage, and a stage has no column, so 'the rebuilt RTT accrual' tells "
+            "nobody it is built from the entitlement, the months and the daily rate."
+        ),
+    )
     formula_in_headers: str = Field(
         default="",
         description=(

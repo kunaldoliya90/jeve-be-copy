@@ -8,7 +8,7 @@
 # Business context for everything below: the `vacation-accrual` skill.
 
 id: vacation-accrual-france
-version: 10
+version: 11
 name: France vacation accrual
 process: Record to Report
 sub_process: Payroll
@@ -139,48 +139,125 @@ reperformance:
       against: cp_provision
       tolerance: 0.01
 
+    # --- the working's own internal arithmetic -------------------------------------------
+    # The six identities above cover every column the posted figure is built from. These six
+    # cover the rest of the row: the employer-charge columns, the two provision totals that
+    # include those charges, the RTT provision the file states in money, and the prior
+    # period's own leave balance. None of them reaches the posted amount - the entry excludes
+    # employer social charges - so nothing here can change the figure a review reports. They
+    # exist because an edit to a column nothing reads is still an edit to the working, and
+    # until these were declared, "Provision Totale" could be moved by a million euros without
+    # a single check noticing.
+    #
+    # `against_blank_is_zero` is on for all six, and it is the field's whole purpose. These
+    # columns are left empty for an employee the provision does not apply to, rather than
+    # written as a nought, and a skipped row is an uncovered row - so without it each of these
+    # would report partial on a workbook with nothing wrong with it. Verified against both
+    # French periods before being turned on: every blank coincides with a computed nil (the
+    # CP provision is itself zero wherever its charge amount is blank, and the prior period's
+    # earned and taken days are equal wherever its balance is), and with it on, all six tie on
+    # every record of both files - 2,273 and 2,279 of each.
+    #
+    # The two charge amounts coalesce the *rate* as well. That is the one assumption here, and
+    # it is bounded: it would hide a missing rate only on a row whose base provision is not
+    # zero, and there is no such row on either workbook. Checked explicitly rather than
+    # assumed, because reading a blank statutory rate as 0% is exactly the sort of confident
+    # nought this harness otherwise refuses.
+    - id: cp_charges_amount
+      label: Employer charges on the CP provision at the stated rate
+      expression: coalesce(cp_provision, 0) * coalesce(employer_charge_rate, 0) / 100
+      against: employer_charge_amount
+      against_blank_is_zero: true
+      tolerance: 0.02
+
+    - id: cp_provision_total_sums
+      label: CP provision plus its employer charges against the stated total
+      expression: coalesce(cp_provision, 0) + coalesce(employer_charge_amount, 0)
+      against: cp_provision_with_charges
+      against_blank_is_zero: true
+      tolerance: 0.02
+
+    - id: rtt_provision_values_the_balance
+      label: RTT balance in days times the daily rate
+      expression: coalesce(rtt_balance, 0) * daily_salary_rate
+      against: rtt_provision_base
+      against_blank_is_zero: true
+      tolerance: 0.02
+
+    - id: rtt_charges_amount
+      label: Employer charges on the RTT provision at the stated rate
+      expression: coalesce(rtt_provision_base, 0) * coalesce(employer_charge_rate, 0) / 100
+      against: rtt_employer_charge_amount
+      against_blank_is_zero: true
+      tolerance: 0.02
+
+    - id: rtt_provision_total_sums
+      label: RTT provision plus its employer charges against the stated total
+      expression: coalesce(rtt_provision_base, 0) + coalesce(rtt_employer_charge_amount, 0)
+      against: rtt_provision
+      against_blank_is_zero: true
+      tolerance: 0.02
+
+    - id: cp_prior_movement
+      label: Prior period CP earned minus taken against the stated balance
+      expression: coalesce(cp_earned_prior, 0) - coalesce(cp_taken_prior, 0)
+      against: cp_balance_prior
+      against_blank_is_zero: true
+      tolerance: 0.02
+
 # --- how the posted amount is regenerated from first principles --------------------------
 # Read by step 13c. Deterministic code evaluates every line of this; no model sees any of it.
 #
-# The formula, from 2026-11-04 (v8): each employee's CP provision plus a twelfth of their RTT
-# accrual, summed over the population, against the debit side of the posted entry read from
-# the posting tab's own lines - a different table, a different tab, so the two sides are
-# independent and a difference between them means something. This is the same expression
-# `cp_rtt_composition` already re-performs as `accrual_composition_reperforms` (near-universal
-# coverage on both sample files, 2,271 of 2,273 and 2,280 of 2,280 rows), now promoted to be
-# the headline figure rather than a check beside it - the business asked for the top card
-# itself, not just a nearby block, to move when the CP provision or RTT accrual is wrong.
+# The formula, from 2026-11-04 (v11): each employee's CP provision plus a twelfth of their
+# RTT accrual - where the RTT accrual is now **rebuilt from the days and the rate** rather
+# than read out of the column the workbook states it in. Summed over the population and set
+# against the debit side of the posted entry, read from the posting tab's own lines: a
+# different table on a different tab, so the two sides are independent and a difference
+# between them means something.
 #
-# This reverses the version-7 choice, which built the formula from FTE and non-FTE accrual
-# instead specifically *because* CP provision could not be independently rebuilt from the
-# columns on most rows - that finding was about `cp_provision_builds_up` (CP provision from
-# its own prior/current legs, ~4% coverage), not about this composition, which the business
-# had already verified to near-total coverage. FTE plus non-FTE is not dropped: it moves to
-# `fte_split` below, re-performed and compared the same way, corroborating rather than
-# deciding - a tampered split still surfaces, on `fte_split_aggregates` and in the `fte_split`
-# leg here, just not as this card's headline number.
+# Why it changed from v9/v10, which read `rtt_accrual` directly. That formula took two stated
+# columns and checked they added up to a third. Every input *behind* those two was examined
+# too, but by separate checks with their own statuses, so an edited "Acquis RTT", "Pris RTT",
+# "Months to Accrue" or "Daily Salary (RTT Rate)" left the headline figure reconciling to the
+# cent and surfaced only further down the report. The business asked for the entry's own
+# number to move when any column it is built from is wrong. It now reads five source columns
+# instead of two, and the three intermediates are each compared against the workbook's own
+# answer for the same quantity - so an edited stated column is still caught, as a
+# corroboration that no longer agrees rather than as an unexplained total.
 #
-# `provisional_basis` stays true until the business signs off this formula and the +/-1%
-# tolerance. The arithmetic runs either way; what changes is whether agreement may be relied
-# on, and the work paper says so on its face.
+# The one convention that needed new machinery: an employee who has taken no RTT accrues none
+# of it, which is not expressible with arithmetic alone. `recalc/formula.py` gained
+# `if(condition, then, otherwise)` and six comparisons for it. The nearest arithmetic
+# stand-in - scaling the leg by `min(days_taken, 1)` - was measured and rejected: it is
+# correct only while nobody takes a half day, and three records across the two real workbooks
+# do.
 #
-# `tolerance_pct` widened from 0.1 to 1 (2026-11-04), on business instruction, to comfortably
-# clear the per-record rounding this formula carries that the old fte_accrual + non_fte_accrual
-# one did not: dividing the RTT accrual by twelve and rounding each record to the cent leaves
-# a few cents of aggregate dust (-0.03 on 236264.xlsx, -0.01 on 305800.xlsx) that 0.1% of a
-# multi-million-euro entry (tens of thousands of euros) already swallowed many times over - the
-# widening is headroom for a future, smaller entry of this type, not a response to these two.
-# Checked and ruled out as the cause: pre-rounding either leg to the cent before combining them
-# (matching the worked example's own intermediate rounding) gives the identical total either
-# way on both real files, and rounding `rtt_accrual` itself to the cent first makes 305800.xlsx
-# worse (+0.29 instead of -0.01) - that column carries more than two decimals of real precision
-# in the file, not a float artefact to clean up, and reading it as 2-decimal currency is the
-# bug a "fix" there would have introduced. The dust is the data, not the arithmetic.
+# Measured against the real files before being declared. Both French periods rebuild every
+# record and reconcile within tolerance: 27,905,812.63 against 27,905,812.64 booked on
+# 305800.xlsx, and 28,672,591.23 against 28,672,591.24 on 236264.xlsx - the latter a cent out
+# where v10 was three cents out, because a product recomputed in Decimal carries precision the
+# stated column had already rounded away. All four corroborating legs tie on every record of
+# both: 2,273 and 2,280. The two employees on 305800.xlsx with an unmapped `#N/A` staffing
+# type and no CP provision remain incomplete, which is the honest reading of a row whose
+# inputs are absent, and 236264.xlsx now reconciles outright rather than partially.
+#
+# 935348.xlsb (the global MSVacation model) binds none of these columns - that convention is
+# French-only - so its entry recalculation continues to report `unable_to_validate`, exactly
+# as it has since v9. `RecalculationSpec` holds one formula for the whole JE type with no
+# per-variant override; the business chose to accept this rather than build one.
+#
+# `provisional_basis` stays true until the business signs this formula and the tolerance off.
+# The arithmetic runs either way; what changes is whether agreement may be relied on, and the
+# work paper says so on its face.
+#
+# `tolerance_pct` is unchanged at 1% (widened from 0.1% on 2026-11-04 on business
+# instruction). It is headroom for a smaller entry of this type, not a response to these two:
+# the dust each real file carries is cents against a multi-million-euro entry.
 recalculation:
   table: calculation
   record_key: employee_ref
   stated: total_accrual
-  formula: cp_provision + (rtt_accrual / 12)
+  formula: cp_provision + rtt_amount / 12
   sign: a positive amount is a debit to the expense accounts
   day_count: the approved denominator stated in the methodology, never an assumed 30
   tolerance_pct: 1
@@ -190,68 +267,115 @@ recalculation:
   currency: { meaning: currency, default: EUR }
   booked: { method: posting_debits, table: je_posting, amount: line_amount, account: account }
   worked_example: >
-    One record of the working: a CP provision of 12,409.29 plus a twelfth of its 1,766.46 RTT
-    accrual gives 12,556.50, which is the amount the workbook states as that employee's total.
-    The same record's FTE and non-FTE accruals, 12,556.50 and 0.00, also add to 12,556.50 -
-    re-performed and compared separately below, since they corroborate the figure rather than
-    build it. Every record's CP-provision-plus-a-twelfth-RTT added together gives the entry.
-  # The same record as `worked_example` above, carried one level further back for a reader who
-  # has never seen this formula: where the 1,766.46 RTT accrual and the 12,409.29 CP provision
-  # themselves come from. Fixed numbers, chosen once and checked against the identities above
+    One record of the working: a yearly RTT entitlement of 10 days, prorated over 8 months
+    worked, gives 6.67 days earned; one day has been taken, leaving 5.67; valued at the
+    employee's daily rate of EUR 311.73 that is an RTT accrual of 1,766.46, a twelfth of which
+    is 147.21; added to the CP provision of 12,409.29 that gives 12,556.50, which is the
+    amount the workbook states as that employee's total. The same record's FTE and non-FTE
+    accruals, 12,556.50 and 0.00, also add to 12,556.50 - re-performed and compared separately
+    below, since they corroborate the figure rather than build it. Every record's total added
+    together gives the entry.
+  # The same record as `worked_example` above, in plain language for a reader who has never
+  # seen this formula. Fixed numbers, chosen once and checked against the identities above
   # rather than read live from any particular review - the same convention `worked_example`
   # already follows, so a new review never changes what this section says.
   explained:
     intro: >
-      Here is the calculation in plain language, using employee 1073 - the same record
-      `worked_example` above is drawn from.
+      Here is the calculation in plain language, using employee 1073 as the example.
     context: >
-      The two legs are valued differently. CP (paid holiday) is a liability the business
-      already knows in full, carried forward as last year's provision plus this year's. RTT is
-      earned gradually over the year, so only the days not yet taken are still owed, and only
-      a twelfth of their value is added each month - the same twelfth `methodology.notes`
-      describes.
+      What we are calculating: how much the company owes an employee for paid leave they have
+      earned but not yet taken. There are two kinds of leave. Regular paid holidays (CP), and
+      RTT days, which are extra days off for working beyond 35 hours a week.
     steps:
-      - label: RTT days earned so far
-        detail: The yearly RTT entitlement, divided by twelve and multiplied by months worked.
-        example: "10 / 12 x 8 = 6.67 days"
-      - label: Unused RTT days
-        detail: Days earned so far, minus days already taken, floored at zero.
-        example: "6.67 - 1 = 5.67 days"
-      - label: Value the unused days
-        detail: Unused RTT days, times the employee's daily salary rate.
-        example: "5.67 x EUR 311.73 = EUR 1,766.46"
-      - label: A twelfth of that value
-        detail: Only a twelfth of the RTT value is accrued this month.
+      - label: How many RTT days has the employee earned so far this year?
+        detail: >
+          An employee earns their yearly RTT days gradually, month by month. We take the full
+          year's allowance, divide it by 12 to get one month's worth, and multiply by the
+          number of months worked so far.
+        example: "10 days a year / 12 x 8 months = 6.67 days earned so far"
+      - label: Has the employee used any of those days?
+        detail: >
+          If no RTT days have been taken at all, the RTT part of the accrual is nil and the
+          calculation goes straight to the paid-holiday amount. Otherwise it carries on.
+        example: Employee 1073 has taken 1 day, so the calculation continues.
+      - label: How many of those days are still unused?
+        detail: >
+          Subtract the RTT days the employee has already taken. If they have taken more than
+          they have earned, count it as zero, never negative.
+        example: "6.67 earned - 1 taken = 5.67 days left"
+      - label: What are the unused days worth?
+        detail: Multiply the days left by the employee's daily salary.
+        example: "5.67 days x EUR 311.73 = EUR 1,766.46"
+      - label: Take one month's share.
+        detail: >
+          Divide that amount by 12 to get the portion that belongs to the current month.
         example: "EUR 1,766.46 / 12 = EUR 147.21"
-      - label: Add the paid-holiday provision
-        detail: The CP provision, carried forward from last year plus this year.
+      - label: Add the paid-holiday (CP) amount.
+        detail: >
+          Add the amount already set aside for the employee's unused regular paid holidays,
+          from last year and this year combined.
         example: "EUR 147.21 + EUR 12,409.29 = EUR 12,556.50"
-      - label: FTE and non-FTE employees only
-        detail: Other staffing types fall outside this review's population.
-        example: Employee 1073 is FTE.
+      - label: Check the employee type.
+        detail: >
+          The calculation only applies to employees classified as FTE or Non-FTE. For anyone
+          else the result is zero.
+        example: Employee 1073 is FTE, so the result stands.
     summary: >
       In one sentence: the total accrual is one month's share of the value of unused RTT days,
-      plus the full value of unused paid holidays, for FTE and non-FTE employees only.
+      plus the full value of unused paid holidays, for FTE and Non-FTE employees only.
     caveats:
       - The amount excludes employer social charges.
       - Only the RTT portion is divided by twelve; the paid-holiday amount is counted in full.
       - >-
-        Both legs are floored at zero so a balance that has been overspent never turns an
-        employee's accrual negative - there is no separate rule that zeroes RTT simply because
-        none of it has been taken yet.
+        Both legs are floored at zero, so a balance that has been overspent never turns an
+        employee's accrual negative.
+      - >-
+        Step 2 sets the RTT part to zero whenever an employee has taken no RTT days at all. On
+        both sample workbooks the file's own balance column is nil on every one of those
+        records, so this reproduces the preparer's own convention rather than imposing one.
+        Confirm it with whoever owns the formula before relying on this explanation.
+      - >-
+        Step 7 describes the population this entry is meant to cover, and no check currently
+        enforces it: nothing yet verifies that an employee outside the FTE and Non-FTE classes
+        carries a zero.
+  # Every column the formula is built from is declared here, so the work paper can show each
+  # one beside its value and its cell on any record it cites. `required: false` where a blank
+  # is the business's own answer rather than a gap - see each description.
   inputs:
     - id: cp_provision
       meaning: cp_provision
       unit: currency
       required: true
-      description: The CP provision as the payroll extract states it for the employee.
-    - id: rtt_accrual
-      meaning: rtt_accrual
-      unit: currency
-      required: true
       description: >
-        The RTT accrual the workbook states; a twelfth of it is added to the CP provision to
-        arrive at the employee's total.
+        The CP provision as the payroll extract states it for the employee: last year's
+        provision plus this year's. Rebuilt from those two legs in its own right by
+        `cp_provision_rebuilds`.
+    - id: rtt_entitlement_days
+      meaning: rtt_earned
+      unit: days
+      required: false
+      description: >
+        The employee's RTT entitlement for the full year, before proration. Blank for an
+        employee with no RTT entitlement in the period - 137 and 132 records on the two real
+        workbooks, all of them ordinary employees with real CP activity - so it is folded to
+        zero rather than read as a gap.
+    - id: months_to_accrue
+      meaning: months_to_accrue
+      unit: months
+      required: true
+      description: Months of the vacation year worked at the reporting date.
+    - id: rtt_days_taken
+      meaning: rtt_taken
+      unit: days
+      required: false
+      description: >
+        RTT days already taken. Blank on about a quarter of the records, and there it means
+        none have been taken rather than that the figure is unknown.
+    - id: daily_rate
+      meaning: daily_salary_rate
+      unit: currency_per_day
+      required: true
+      description: The daily salary rate the RTT days are valued at.
     - id: fte_amount
       meaning: fte_accrual
       unit: currency
@@ -264,29 +388,43 @@ recalculation:
       unit: currency
       required: false
       description: The non-FTE share, carried for the same corroboration.
-    - id: rtt_days
-      meaning: rtt_balance_days
-      unit: days
-      required: false
-      description: Remaining RTT days at the reporting date, floored at zero.
-    - id: daily_rate
-      meaning: daily_salary_rate
-      unit: currency_per_day
-      required: false
-      description: The daily salary rate the RTT accrual is valued at.
+  # The formula in stages. Each `agrees_with` names the column the workbook states its own
+  # answer for that quantity in, so every intermediate is compared against the file as well as
+  # feeding the next step - which is what keeps an edit to a stated column visible even though
+  # the formula no longer reads it.
   derive:
+    - id: earned_rtt_days
+      expression: coalesce(rtt_entitlement_days, 0) / 12 * months_to_accrue
+      label: RTT days earned
+      unit: days
+      agrees_with: rtt_earned_days
+      description: >
+        The yearly RTT entitlement prorated over the months worked. Compared against the
+        workbook's own earned-days column, which nothing read at all before this.
+    - id: unused_rtt_days
+      expression: if(coalesce(rtt_days_taken, 0) == 0, 0, max(earned_rtt_days - rtt_days_taken, 0))
+      label: Unused RTT days
+      unit: days
+      agrees_with: rtt_balance_days
+      description: >
+        Days earned so far less days taken, floored at zero - and nil outright for an employee
+        who has taken none, which is the convention the file itself applies.
+    - id: rtt_amount
+      expression: unused_rtt_days * daily_rate
+      label: Rebuilt RTT accrual
+      unit: currency
+      agrees_with: rtt_accrual
+      description: >
+        The RTT accrual, rebuilt from the days and the rate. A twelfth of this is what the
+        formula adds to the CP provision.
     - id: fte_split
       expression: fte_amount + non_fte_amount
+      label: FTE plus non-FTE accrual
       unit: currency
       agrees_with: total_accrual
       description: >
-        FTE plus non-FTE accrual, re-performed and compared with the stated total - the
-        formula this card used before version 8; corroborating now rather than deciding.
-    - id: rtt_amount
-      expression: max(rtt_days, 0) * daily_rate
-      unit: currency
-      agrees_with: rtt_accrual
-      description: RTT accrual, re-performed from the remaining days and the daily rate.
+        FTE plus non-FTE accrual, re-performed and compared with the stated total - the formula
+        this card used up to version 8; corroborating rather than deciding ever since.
 
 accounts:
   source: master_data
@@ -308,10 +446,13 @@ tables:
     # file never asked for them, so step 12 could not have told anybody they were absent.
     meanings:
       [employee_ref, company_code, cost_center, staffing_type, fte_classification,
-       cp_earned, cp_taken, cp_balance, cp_provision, cp_provision_prior, cp_provision_current,
-       rtt_earned, rtt_taken, rtt_balance, rtt_balance_days, rtt_accrual, rtt_provision,
-       months_to_accrue, daily_salary_rate, currency, fte_accrual, non_fte_accrual,
-       total_accrual]
+       cp_earned, cp_taken, cp_balance, cp_earned_prior, cp_taken_prior, cp_balance_prior,
+       cp_provision, cp_provision_prior, cp_provision_current, cp_provision_with_charges,
+       employer_charge_rate, employer_charge_amount,
+       rtt_earned, rtt_earned_days, rtt_taken, rtt_balance, rtt_balance_days, rtt_accrual,
+       rtt_provision_base, rtt_employer_charge_amount, rtt_provision,
+       months_to_accrue, daily_salary_rate, currency, fte_accrual,
+       non_fte_accrual, total_accrual]
   employee_master:
     required: true
     meanings: [employee_ref, sap_company, cost_center, staffing_type, start_date, active]
@@ -551,6 +692,88 @@ checks:
       adjustment, or one of those periods was changed after the total was struck.
     recipe:
       { tool: reperform, args: { table: calculation, identities: [cp_provision_builds_up] } }
+
+  # --- the working's own internal arithmetic ----------------------------------------------
+  # One check per identity rather than one check carrying all six, which matters for the
+  # status a tamper reaches: `outcome_for` takes a figures-decided status from the *decisive*
+  # figure, and a reperform figure is not decisive, so the first one in the list stands in.
+  # Grouped, a discrepancy in the second or third identity would surface only as incomplete
+  # coverage - partial, not failed - and a million euros moved in a provision total deserves
+  # the stronger word. Each of these is also a different assertion a reviewer would want to
+  # read as its own line.
+  #
+  # None of these columns reaches the posted amount, since the entry excludes employer social
+  # charges. They are checked because an edit to a column nothing reads is still an edit to
+  # the working, and that is what an undetected manipulation looks like.
+  - id: cp_charges_tie_to_the_rate
+    area: calculation_accuracy
+    question: >
+      Do the employer charges on each employee's CP provision equal that provision at the
+      rate the workbook states for them?
+    decided_by: figures
+    risk: >
+      A charge amount that does not follow its own stated rate has been typed over, or the
+      rate was changed after the amount was struck.
+    recipe: { tool: reperform, args: { table: calculation, identities: [cp_charges_amount] } }
+
+  - id: cp_provision_total_includes_its_charges
+    area: calculation_accuracy
+    question: >
+      Does the stated total CP provision equal the provision plus its employer charges,
+      employee by employee?
+    decided_by: figures
+    risk: >
+      The column the preparer reads as the full cost of the CP liability no longer agrees
+      with the two figures it is made of.
+    recipe:
+      { tool: reperform, args: { table: calculation, identities: [cp_provision_total_sums] } }
+
+  - id: rtt_provision_values_the_balance
+    area: calculation_accuracy
+    question: >
+      Does the RTT provision the workbook states in money equal the RTT balance in days at
+      the employee's daily rate?
+    decided_by: figures
+    risk: >
+      The RTT liability was valued at a rate or a balance other than the ones the workbook
+      carries for that employee.
+    recipe:
+      { tool: reperform,
+        args: { table: calculation, identities: [rtt_provision_values_the_balance] } }
+
+  - id: rtt_charges_tie_to_the_rate
+    area: calculation_accuracy
+    question: >
+      Do the employer charges on each employee's RTT provision equal that provision at the
+      rate the workbook states for them?
+    decided_by: figures
+    risk: >
+      As for the CP charges: an amount that does not follow its own stated rate has been
+      typed over.
+    recipe: { tool: reperform, args: { table: calculation, identities: [rtt_charges_amount] } }
+
+  - id: rtt_provision_total_includes_its_charges
+    area: calculation_accuracy
+    question: >
+      Does the stated total RTT provision equal the provision plus its employer charges,
+      employee by employee?
+    decided_by: figures
+    risk: >
+      The column the preparer reads as the full cost of the RTT liability no longer agrees
+      with the two figures it is made of.
+    recipe:
+      { tool: reperform, args: { table: calculation, identities: [rtt_provision_total_sums] } }
+
+  - id: prior_period_cp_balance_ties
+    area: calculation_accuracy
+    question: >
+      Does the prior period's CP balance equal that period's earned days less the days taken,
+      employee by employee?
+    decided_by: figures
+    risk: >
+      The brought-forward leave balance the current period's provision is built on top of
+      does not tie to its own movement.
+    recipe: { tool: reperform, args: { table: calculation, identities: [cp_prior_movement] } }
 
   - id: fte_split_aggregates
     area: calculation_accuracy
