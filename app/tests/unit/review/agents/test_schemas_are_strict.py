@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from review.agents.clustering import CLUSTERS_SCHEMA
+from review.agents.evidence_appropriateness import EVIDENCE_APPROPRIATENESS_SCHEMA
 from review.agents.methodology import METHODOLOGY_SCHEMA
 from review.agents.picture import PICTURE_SCHEMA
 from review.agents.schemas import CHALLENGES_SCHEMA, VERDICTS_SCHEMA
@@ -31,6 +32,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     "AI-M methodology": METHODOLOGY_SCHEMA,
     "AI-R picture": PICTURE_SCHEMA,
     "AI-X clusters": CLUSTERS_SCHEMA,
+    "AI-E evidence appropriateness": EVIDENCE_APPROPRIATENESS_SCHEMA,
 }
 
 

@@ -21,13 +21,28 @@ from review.models.verdicts import CheckOutcome
 
 logger = logging.getLogger(__name__)
 
-_NUMBER: Final = re.compile(r"-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?")
-r"""Grouped first, then plain, and neither may end on punctuation.
+_NUMBER: Final = re.compile(
+    r"(?<![A-Za-z$\d.,-])(?:-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?)"
+)
+r"""A quoted figure: grouped first, then plain, never ending on punctuation, and never the
+digits inside an identifier.
 
-Both halves of that matter, and a live run proved it. A pattern whose integer part is
-``[\d,]*`` matches the ``230,`` in "AH230, and" — reporting a figure that was never written,
-and reporting the real ``230`` beside it as a second one. A decimal part without required
-digits swallows the full stop that ends a sentence, with the same result."""
+Every part of that was put there by a live run.
+
+A pattern whose integer part is ``[\d,]*`` matches the ``230,`` in "AH230, and" - reporting a
+figure that was never written. A decimal part without required digits swallows the full stop
+that ends a sentence, with the same result.
+
+The lookbehind is the third of them. ``AH230`` is a cell reference, ``F-12`` is a figure id
+and ``FY26`` is a period: the digits in each are part of a name, not an amount anybody
+claimed. Without it a report whose next step says "example cell AH230" lists 230 as a number
+that traces to nothing - which tells a reviewer to distrust a figure that was never quoted,
+and that is exactly the kind of noise that makes the list itself worth ignoring.
+
+The lookbehind has to exclude digits, commas, dots and the hyphen as well as letters, not
+just letters. The scanner does not give up on a blocked position; it restarts one character
+later, so ``AH230`` blocked only on ``A-Z`` would still match the ``30``, and ``F-12`` would
+still match the ``12``."""
 
 _TOLERANCE: Final = Decimal("0.01")
 
@@ -116,15 +131,20 @@ def _coverage_counts(coverage: RowCoverage) -> list[Decimal]:
 
 
 def _counts(outcomes: dict[str, CheckOutcome]) -> list[Decimal]:
-    """How many checks ran, how many are waiting on a person, and how many reached each
-    status. A summary opens on these, and they are no less established than an amount."""
+    """How many checks ran, how many are waiting on a person, how many reached each status,
+    and how many sit in each area. A summary opens on the first three; an area's own reason
+    is entitled to the last - "16 check(s); weakest is ..." is as established as a status
+    count, and an area merging several checks together is exactly where that number stops
+    being small enough that nobody would ever write it down."""
     if not outcomes:
         return []
     by_status = Counter(outcome.final_status for outcome in outcomes.values())
+    by_area = Counter(outcome.area for outcome in outcomes.values())
     waiting = sum(1 for outcome in outcomes.values() if outcome.needs_review)
     return [
         Decimal(len(outcomes)),
         Decimal(waiting),
         Decimal(len(outcomes) - waiting),
         *(Decimal(count) for count in by_status.values()),
+        *(Decimal(count) for count in by_area.values()),
     ]

@@ -177,6 +177,23 @@ def _args(raw: object) -> dict[str, Any]:
     return pairs
 
 
+def split_out(plan: ExecutionPlan, tool: str) -> tuple[tuple[PlanStep, ...], ExecutionPlan]:
+    """The steps naming one tool, and the plan without them.
+
+    Used for the entry recalculation, which the orchestrator runs as its own numbered step
+    rather than inside the fan-out at step 13: it produces a work paper as well as figures,
+    and the person waiting on the review is owed a line of progress for the one check that
+    rebuilds the entry. Splitting the validated plan rather than planning it separately
+    keeps step 12's guarantees - the tool exists, its arguments are ones it declares, its
+    table is bound, and no other step claims the same check.
+    """
+    taken = tuple(step for step in plan.steps if step.tool == tool)
+    if not taken:
+        return (), plan
+    rest = tuple(step for step in plan.steps if step.tool != tool)
+    return taken, ExecutionPlan(steps=rest, source=plan.source)
+
+
 def merge(plan: ExecutionPlan, proposed: tuple[PlanStep, ...]) -> ExecutionPlan:
     """Add proposed steps after the recipe steps, keeping one step per check."""
     if not proposed:
@@ -198,5 +215,6 @@ __all__ = [
     "merge",
     "plan_from_recipes",
     "propose_steps",
+    "split_out",
     "unplanned",
 ]

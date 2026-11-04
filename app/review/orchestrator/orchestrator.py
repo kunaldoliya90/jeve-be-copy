@@ -13,13 +13,13 @@ a review tool to mislead.
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 from functools import partial
-from typing import Final
+from typing import Any, Final, NamedTuple
 from uuid import uuid4
 
 from api.consts import AICall, ErrorCode, JETypeSource, SSEEvent
@@ -51,7 +51,7 @@ from review.guardrails.map_check import MapVerdict, map_check
 from review.guardrails.plan_check import CheckedPlan, plan_check
 from review.intake.gatekeeper import UploadOk, validate_upload
 from review.intake.reuse import file_digest, reuse_key
-from review.models.context import JETypeContext
+from review.models.context import BusinessRules, JETypeContext
 from review.models.evidence import (
     EvidenceItem,
     EvidenceStatus,
@@ -61,6 +61,12 @@ from review.models.evidence import (
     PictureReading,
 )
 from review.models.plan import ExecutionPlan, PlanStep
+from review.models.recalculation import (
+    DiscrepancyKind,
+    EntryRecalculation,
+    RecalcCitation,
+    RelatedRecalcCheck,
+)
 from review.models.result import (
     AICallRecord,
     AuditTrail,
@@ -72,18 +78,32 @@ from review.models.result import (
 from review.models.review_context import ReviewContext
 from review.models.sheet_map import SheetMap
 from review.models.split_summary import SplitSummary
-from review.models.verdicts import Challenge, CheckOutcome, Verdict, strictness
+from review.models.verdicts import Challenge, CheckOutcome, ReviewFlag, Status, Verdict, strictness
 from review.models.workbook import WorkbookProfile
 from review.models.workbook_data import WorkbookData
 from review.orchestrator.diagnosis import diagnose
-from review.orchestrator.planner import merge, plan_from_recipes, propose_steps, unplanned
+from review.orchestrator.planner import (
+    merge,
+    plan_from_recipes,
+    propose_steps,
+    split_out,
+    unplanned,
+)
 from review.orchestrator.rules import outcome_for
 from review.orchestrator.runner import run_checks
 from review.orchestrator.scoring import score_review
 from review.orchestrator.split_summary import build_split_summary
+from review.recalc.rows_query import RelatedCheck, merge_related_flags
 from review.storage.reviews import ReviewStore, utc_now
-from review.tools.base import ToolContext
+from review.tools.base import ToolContext, assign_figure_ids
 from review.tools.entry import EvidenceRegisterTool, PeriodAgreementTool
+from review.tools.evidence_appropriateness import TOOL_NAME as EVIDENCE_TOOL
+from review.tools.evidence_appropriateness import figures_for_evidence_appropriateness
+from review.tools.recalculation import TOOL_NAME as RECALC_TOOL
+from review.tools.recalculation import run_recalculation
+from review.tools.reperform import TOOL_NAME as REPERFORM_TOOL
+from review.tools.trend import TOOL_NAME as TREND_TOOL
+from review.tools.trend import TrendBaseline, run_trend_check
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +117,12 @@ MAX_LISTED_REJECTIONS: Final = 3
 MAX_REMEMBERED: Final = 50
 """Finished runs held in memory. Every one of them keeps a workbook profile alive, and the
 stored record is the durable copy, so the rest are read back from disk."""
+
+DEMO_EVIDENCE_APPROPRIATENESS_PASS: Final = True
+"""Scores the disabled evidence-appropriateness check (see `_gate_on_evidence`) as a clean
+pass instead of `missing_evidence` (zero credit, needs a person) - for the demo only. The
+check still is not actually being run; this just changes how the un-run state is scored.
+Flip to False to go back to the honest "not verified" credit once the demo is over."""
 
 
 class Phase(StrEnum):
@@ -127,6 +153,15 @@ def not_run_for(run: "ReviewRun") -> tuple[str, ...]:
     """
     missing: list[str] = []
 
+    if run.context is not None and any(
+        ReviewFlag.CHECK_DISABLED in outcome.review_reasons
+        for outcome in run.context.outcomes.values()
+    ):
+        missing.append(
+            "Evidence appropriateness is not currently checked, so whether the supporting "
+            "evidence relates to this entry was never established, and the check is scored "
+            "as not verified rather than skipped silently."
+        )
     if not run.judged:
         missing.append(
             "No model was available, so every check settled by judgement rather than by "
@@ -174,6 +209,9 @@ class ReviewRun:
     split_summary: SplitSummary | None = None
     """The category split work paper, assembled at step 18. Held on the run so the live
     view serves the same object the stored record carries."""
+    recalculation: EntryRecalculation | None = None
+    """The entry recalculation work paper, from step 13c. Held for the same reason: the
+    live view and a re-read of the record must never report the entry differently."""
     layout_key: str = ""
     layout_hit: bool = False
     je_type: JETypeContext | None = None
@@ -219,6 +257,7 @@ _STEP_WEIGHT: Final[dict[str, int]] = {
     "12": 76,
     "13a": 77,
     "13": 78,
+    "13c": 80,
     "13b": 82,
     "14": 88,
     "15": 93,
@@ -253,6 +292,7 @@ _STEP_ORDER: Final[tuple[str, ...]] = (
     "12",
     "13a",
     "13",
+    "13c",
     "13b",
     "14",
     "15",
@@ -268,6 +308,7 @@ _STEP_ORDER: Final[tuple[str, ...]] = (
 _AI_STEPS: Final[dict[AICall, tuple[str, str]]] = {
     AICall.UNDERSTAND: ("8", "Reading the workbook independently"),
     AICall.PLAN: ("11", "Planning the checks"),
+    AICall.EVIDENCE_APPROPRIATENESS: ("12a", "Checking the evidence relates to this entry"),
     AICall.METHODOLOGY: ("13a", "Reading the methodology"),
     AICall.PICTURE_READER: ("13a", "Reading the screenshots"),
     AICall.CLUSTERING: ("13b", "Grouping the exceptions"),
@@ -704,22 +745,48 @@ class ReviewOrchestrator:
         reading = await self._read_methodology(run, data, binding.sheet_map)
         readings = await self._read_pictures(run, data)
 
-        # --- step 13: every step, concurrently, on a worker thread ---
-        await self._step(run, "13", "Running the checks")
         tool_ctx = ToolContext(
             data=data,
             sheet_map=binding.sheet_map,
             rules=rules,
             facts=run.context.facts,
             defects=measured.defects,
+            formula_shapes=measured.formula_shapes,
             methodology=je_spec.methodology,
             methodology_read=reading,
             picture_readings=readings,
+            # The approved formula reaches the tool here rather than through the plan: a
+            # tool argument is a column or a table, never a methodology, and a basis that
+            # travelled in the plan could be chosen by whatever wrote the plan.
+            je_type_args={
+                "recalculation": je_spec.recalculation,
+                "reperformance": je_spec.reperformance,
+                "evidence": je_spec.evidence,
+            },
             figure_samples=self._figure_samples,
         )
-        pack = await loop.run_in_executor(
-            None,
-            partial(run_checks, checked.plan, tool_ctx, max_workers=self._tool_workers),
+
+        # --- step 12a: whether the evidence relates to this entry, disabled for now. See
+        # `_gate_on_evidence`: it no longer calls a model or stops the plan, and the check
+        # is scored as not currently checked rather than run. ---
+        evidence_steps, tool_plan = split_out(checked.plan, EVIDENCE_TOOL)
+        pack: dict[str, tuple[Figure, ...]] = {}
+        if evidence_steps:
+            pack = await self._gate_on_evidence(run, evidence_steps)
+
+        # --- step 13: every step, concurrently, on a worker thread ---
+        await self._step(run, "13", "Running the checks")
+        # The entry recalculation and the trend check are both lifted out and run as their
+        # own numbered steps, 13c and 13d. Each produces a work paper or a lookup as well as
+        # figures, and the trend check additionally needs this review's own total, which
+        # does not exist until 13c has produced it.
+        recalc_steps, tool_plan = split_out(tool_plan, RECALC_TOOL)
+        trend_steps, tool_plan = split_out(tool_plan, TREND_TOOL)
+        pack.update(
+            await loop.run_in_executor(
+                None,
+                partial(run_checks, tool_plan, tool_ctx, max_workers=self._tool_workers),
+            )
         )
         run.context.evidence_pack = pack
         run.context.evidence_register = _evidence_register(pack, je_spec)
@@ -734,6 +801,16 @@ class ReviewOrchestrator:
                 "figures": sum(len(figures) for figures in pack.values()),
             },
         )
+
+        # --- step 13c: rebuild the entry from the inputs the business approved ---
+        if recalc_steps:
+            pack = await self._recalculate(run, recalc_steps, tool_ctx, pack, je_spec)
+            run.context.evidence_pack = pack
+
+        # --- step 13d: how the posted amount compares with recent history ---
+        if trend_steps:
+            pack = await self._trend_check(run, trend_steps, je_spec, rules, pack)
+            run.context.evidence_pack = pack
 
         # --- step 13b: too many exceptions to read as a list, so group them by cause ---
         clusters: dict[str, tuple[ExceptionCluster, ...]] = {}
@@ -814,6 +891,29 @@ class ReviewOrchestrator:
             )
             for check in je_spec.checks
         }
+        # The evidence-appropriateness check never ran (see `_gate_on_evidence`), so its
+        # figure-derived outcome above is overwritten rather than trusted: nothing was
+        # established either way, and it is scored `missing_evidence` (zero credit) rather
+        # than the `unable_to_validate` half-credit an ordinary unproven check earns - except
+        # for the demo, where `DEMO_EVIDENCE_APPROPRIATENESS_PASS` scores it a clean pass.
+        for check in je_spec.checks:
+            if check.recipe is not None and check.recipe.tool == EVIDENCE_TOOL:
+                outcomes[check.id] = (
+                    CheckOutcome(
+                        check_id=check.id,
+                        area=check.area,
+                        final_status=Status.PASS,
+                        needs_review=False,
+                    )
+                    if DEMO_EVIDENCE_APPROPRIATENESS_PASS
+                    else CheckOutcome(
+                        check_id=check.id,
+                        area=check.area,
+                        final_status=Status.MISSING_EVIDENCE,
+                        needs_review=True,
+                        review_reasons=(ReviewFlag.CHECK_DISABLED,),
+                    )
+                )
         run.context.outcomes = outcomes
         for outcome in outcomes.values():
             await self._emit(
@@ -942,6 +1042,185 @@ class ReviewOrchestrator:
                 "cost_usd": str(run.ai_cost),
             },
         )
+
+    async def _gate_on_evidence(
+        self, run: ReviewRun, steps: Sequence[PlanStep]
+    ) -> dict[str, tuple[Figure, ...]]:
+        """Step 12a, disabled for now: no model call is made here.
+
+        Whether the evidence relates to this entry used to gate every other check — a
+        mismatch stopped the review outright, since a recomputation of the wrong entity's
+        numbers would still return a number. That gate is off for now: each check this tool
+        would have answered is reported as not currently checked, and the rest of the plan
+        always runs regardless of what it would have said. See `not_run_for` for how that is
+        named to a reader, and `step 16` for where it is scored as `missing_evidence` rather
+        than the default half-credit an unproven check earns elsewhere.
+        """
+        await self._step(run, "12a", "Evidence appropriateness is not currently checked")
+        pack: dict[str, tuple[Figure, ...]] = {}
+        for step in steps:
+            figures = figures_for_evidence_appropriateness(None, step.check_id, **step.args)
+            pack[step.check_id] = assign_figure_ids(figures)
+        if run.context is not None:
+            run.context.evidence_pack = pack
+        await self._emit(
+            run,
+            SSEEvent.STEP_FINISHED,
+            step="12a",
+            name="Evidence appropriateness is not currently checked",
+            detail={"status": "disabled"},
+        )
+        return pack
+
+    async def _recalculate(
+        self,
+        run: ReviewRun,
+        steps: Sequence[PlanStep],
+        ctx: ToolContext,
+        pack: dict[str, tuple[Figure, ...]],
+        je_spec: JETypeContext,
+    ) -> dict[str, tuple[Figure, ...]]:
+        """Step 13c. Rebuild the entry from the approved formula, and report what that found.
+
+        In the executor because it walks every record of the working: the widest sample
+        workbook is 37,613 rows, and the event loop has a progress stream to serve while
+        that happens. The work paper is held on the run and stored with the record; the
+        figures go into the evidence pack, so the check reaches its status at step 16
+        through the same routing rules as every other check and needs no special case there.
+
+        A reviewer reading "the records rebuilt" is owed every other arithmetic finding on
+        those same records, not just this one formula's - so once the paper exists, every
+        other check on this table that step 13 already ran (any ``reperform`` check, found
+        generically rather than named) is surfaced beside it: as its own citation block on
+        the paper, and merged onto the matching rows for "browse every record" to show.
+        """
+        basis = ctx.je_type_args.get("recalculation")
+        row_count = _records_in(ctx, steps[0].args.get("table") or getattr(basis, "table", ""))
+        await self._step(
+            run,
+            "13c",
+            "Rebuilding the entry from its inputs",
+            detail={"rows": row_count, "checks": len(steps)},
+        )
+        loop = asyncio.get_running_loop()
+        merged = dict(pack)
+
+        for step in steps:
+            paper, figures, recalc_rows = await loop.run_in_executor(
+                None,
+                partial(
+                    run_recalculation,
+                    ctx,
+                    ctx.je_type_args.get("recalculation"),
+                    step.check_id,
+                    **step.args,
+                ),
+            )
+            merged[step.check_id] = assign_figure_ids(figures)
+            if paper is not None and run.recalculation is None:
+                related = _related_checks(je_spec, merged, paper.basis.table)
+                if related:
+                    paper = paper.model_copy(
+                        update={"related_checks": tuple(_related_recalc_check(r) for r in related)}
+                    )
+                    related_rows = [
+                        RelatedCheck(r.check_id, r.label, _all_samples(r.figures)) for r in related
+                    ]
+                    recalc_rows = tuple(merge_related_flags(recalc_rows, related_rows))
+                run.recalculation = paper
+                # Written as soon as it exists rather than held until step 20: the review
+                # id is already fixed, the rows are already immutable, and the live view
+                # reaches them through the same store a re-read does, so there is nothing
+                # to gain by waiting and a crash before step 20 to lose them to.
+                if recalc_rows:
+                    self._store.write_recalc_rows(run.review_id, recalc_rows)
+
+        paper = run.recalculation
+        await self._emit(
+            run,
+            SSEEvent.STEP_FINISHED,
+            step="13c",
+            name="Rebuilding the entry from its inputs",
+            detail=(
+                {
+                    "sheet": paper.basis.sheet,
+                    "formula": paper.basis.formula_in_headers or paper.basis.formula,
+                    "rows": paper.rows_total,
+                    "rows_recomputed": paper.rows_recomputed,
+                    "recomputed": str(paper.recomputed_total),
+                    "booked": None if paper.booked.total is None else str(paper.booked.total),
+                    "difference": None if paper.difference is None else str(paper.difference),
+                    "difference_pct": paper.difference_pct,
+                    "within_tolerance": paper.within_tolerance,
+                    "status": paper.status.value,
+                    "citations": paper.citation_count,
+                    "duration_ms": paper.duration_ms,
+                }
+                if paper is not None
+                else {"status": "unable_to_validate", "rows": row_count}
+            ),
+        )
+        return merged
+
+    async def _trend_check(
+        self,
+        run: ReviewRun,
+        steps: Sequence[PlanStep],
+        je_spec: JETypeContext,
+        rules: BusinessRules,
+        pack: dict[str, tuple[Figure, ...]],
+    ) -> dict[str, tuple[Figure, ...]]:
+        """Step 13d. Compare the posted amount against the entry type's recent history.
+
+        Run one step after the recalculation rather than inside the step 13 fan-out, for
+        the reason that one is too: it needs this review's own total, which exists only
+        once step 13c has produced it, and a baseline the review store holds rather than
+        the workbook - the one lookup in the whole run that a tool could not do itself and
+        stay pure.
+        """
+        await self._step(run, "13d", "Comparing against recent history")
+        paper = run.recalculation
+        current_total: Decimal | None = None
+        if paper is not None:
+            current_total = paper.booked.total if paper.booked.total is not None else (
+                paper.recomputed_total
+            )
+
+        loop = asyncio.get_running_loop()
+        amounts = await loop.run_in_executor(
+            None,
+            partial(
+                self._store.trend_baseline,
+                je_type=je_spec.id,
+                variant=run.context.je_type_variant if run.context else None,
+                before=run.created_at,
+                months=rules.trend.lookback_months,
+                exclude_period=run.period,
+            ),
+        )
+        baseline = TrendBaseline(
+            amounts=tuple(amounts),
+            lookback_months=rules.trend.lookback_months,
+            max_change_pct=rules.trend.max_change_pct,
+        )
+
+        merged = dict(pack)
+        for step in steps:
+            figures = run_trend_check(baseline, current_total, step.check_id, **step.args)
+            merged[step.check_id] = assign_figure_ids(figures)
+
+        await self._emit(
+            run,
+            SSEEvent.STEP_FINISHED,
+            step="13d",
+            name="Comparing against recent history",
+            detail={
+                "prior_periods": len(amounts),
+                "lookback_months": rules.trend.lookback_months,
+                "max_change_pct": rules.trend.max_change_pct,
+            },
+        )
+        return merged
 
     async def _read_methodology(
         self, run: ReviewRun, data: WorkbookData, sheet_map: SheetMap
@@ -1099,6 +1378,7 @@ class ReviewOrchestrator:
             checks=tuple(outcomes.values()),
             evidence_register=run.context.evidence_register,
             split_summary=run.split_summary,
+            recalculation=run.recalculation,
             report=run.report or ReportPayload(headline=_headline_for(run)),
             audit=AuditTrail(
                 versions=dict(run.context.versions),
@@ -1176,10 +1456,22 @@ class ReviewOrchestrator:
             },
         )
 
-    async def _step(self, run: ReviewRun, step: str, name: str) -> None:
+    async def _step(
+        self,
+        run: ReviewRun,
+        step: str,
+        name: str,
+        detail: dict[str, str | int | float | bool | None] | None = None,
+    ) -> None:
+        """Announce a step as it starts.
+
+        ``detail`` is for the few steps where what is *about* to happen is worth saying -
+        the entry recalculation says how many records it is rebuilding, because on the
+        widest workbook that is the one step a reader can see taking time.
+        """
         run.step = step
         run.progress_pct = _STEP_WEIGHT.get(step, run.progress_pct)
-        await self._emit(run, SSEEvent.STEP_STARTED, step=step, name=name)
+        await self._emit(run, SSEEvent.STEP_STARTED, step=step, name=name, detail=detail)
 
     async def _emit(
         self,
@@ -1400,6 +1692,90 @@ _FACT_LABELS: Final[dict[str, str]] = {
     "hash total": "hash_total",
     "je total": "je_total",
 }
+
+
+def _records_in(ctx: ToolContext, table: object) -> int:
+    """How many rows the recalculation is about to walk, for the line a reader sees first.
+
+    The block's own row count, not a record count: counting records means reading the key
+    column, which is the pass itself. An approximation announced before the work and the
+    exact figure reported after it is the honest way round. Zero where the table cannot be
+    found at all, and the line then simply names the step.
+    """
+    ref = ctx.sheet_map.tables.get(table) if isinstance(table, str) and table else None
+    return ref.last_row - ref.first_row + 1 if ref is not None else 0
+
+
+class _TableCheck(NamedTuple):
+    """One other check on the recalculation's own table, with something to show."""
+
+    check_id: str
+    label: str
+    figures: tuple[Figure, ...]
+
+
+def _related_checks(
+    je_spec: JETypeContext, pack: dict[str, tuple[Figure, ...]], table: str
+) -> list[_TableCheck]:
+    """Every other check that reads ``table`` through the generic reperform tool and found
+    something - found generically, by recipe, rather than naming a single check, so any JE
+    type wiring a new identity onto this table is picked up the same way. A check that
+    ties cleanly is not listed: a wall of "0 differ" entries would bury the ones that matter.
+    """
+    found: list[_TableCheck] = []
+    for check in je_spec.checks:
+        recipe = check.recipe
+        if recipe is None or recipe.tool != REPERFORM_TOOL or recipe.args.get("table") != table:
+            continue
+        figures = pack.get(check.id, ())
+        if not any(figure.exception_count for figure in figures):
+            continue
+        found.append(_TableCheck(check.id, check.question.strip(), figures))
+    return found
+
+
+def _all_samples(figures: tuple[Figure, ...]) -> tuple[dict[str, Any], ...]:
+    return tuple(sample for figure in figures for sample in figure.samples)
+
+
+def _recalc_citation(label: str, sample: dict[str, Any]) -> RecalcCitation:
+    expected, actual = sample.get("expected"), sample.get("actual")
+    return RecalcCitation(
+        row=sample["row"],
+        kind=DiscrepancyKind.STATED_DIFFERS,
+        recomputed=expected,
+        stated=actual,
+        stated_cell=str(sample.get("cell") or ""),
+        difference=sample.get("difference"),
+        why=(
+            f"{label}: expected {expected}, the workbook states {actual}."
+            if expected is not None and actual is not None
+            else f"Also flagged by {label}."
+        ),
+    )
+
+
+def _related_recalc_check(check: _TableCheck) -> RelatedRecalcCheck:
+    """One related check, in the entry recalculation's own citation shape.
+
+    Built from the figures step 13 already produced for it - never re-run, never re-judged.
+    A check declaring more than one identity gets one figure per identity, every one of them
+    decisive in its own right, so every figure's own sentence is kept rather than picking one
+    arbitrarily - a reader is owed all of them, not just the first.
+    """
+    citations = tuple(
+        _recalc_citation(check.label, sample)
+        for figure in check.figures
+        for sample in figure.samples
+        if isinstance(sample.get("row"), int)
+    )
+    return RelatedRecalcCheck(
+        check_id=check.check_id,
+        label=check.label,
+        summary="; ".join(figure.summary for figure in check.figures if figure.summary),
+        citations=citations,
+        citation_count=sum(figure.exception_count for figure in check.figures),
+    )
 
 
 def _read_facts(data: WorkbookData) -> dict[str, object]:

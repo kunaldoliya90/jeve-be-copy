@@ -1,34 +1,23 @@
-"""Re-performing the accrual: the only tools that establish the number rather than agree with it.
+"""Population, classification and sign checks over the records.
+
+The arithmetic identities that used to live here - the accrual split and the leave movement -
+are declared by the business now and re-performed by ``tools/reperform.py``. What is left is
+the work that is not a formula: which employees are in scope, which side of the expense split
+each belongs on, and whether any amount is negative.
 
 Every one of them works **row by row**. A total that agrees while individual rows cancel out
-is a coincidence, and in these workbooks a plausible one — a neighbouring column carries a
-different, entirely sensible total. So each figure here carries its row coverage, and a
-figure that did not cover every row cannot support a pass.
+is a coincidence, and in these workbooks a plausible one, so each figure carries its row
+coverage and a figure that did not cover every row cannot support a pass.
 
 A missing input stays missing. It is never patched with a zero: that turns a data gap into a
 confident figure, and an Excel error value into one too.
 """
 
 from decimal import Decimal
-from typing import Any, Final, NamedTuple
+from typing import Any, Final
 
 from review.models.evidence import Figure, RowCoverage
 from review.tools.base import BaseTool, BoundTable, ToolContext, worst_first
-
-
-class _RowDiff(NamedTuple):
-    row: int
-    expected: Decimal
-    actual: Decimal
-    difference: Decimal
-
-    def as_sample(self) -> dict[str, Any]:
-        return {
-            "row": self.row,
-            "expected": self.expected,
-            "actual": self.actual,
-            "difference": self.difference,
-        }
 
 
 def data_rows(table: BoundTable, key: str = "employee_ref") -> list[int]:
@@ -41,197 +30,6 @@ def data_rows(table: BoundTable, key: str = "employee_ref") -> list[int]:
     if not table.has(key):
         return list(table.rows)
     return [row for row in table.rows if table.text(row, key)]
-
-
-def _compare_rows(
-    ctx: ToolContext,
-    table: BoundTable,
-    expected_of: Any,
-    actual_meaning: str,
-) -> tuple[list[_RowDiff], RowCoverage]:
-    """Walk the records once, comparing a derived figure against the workbook's own.
-
-    Rows where an input is absent are counted as *unbound* rather than as differences: the
-    workbook did not claim anything there, so there is nothing to disagree with.
-    """
-    diffs: list[_RowDiff] = []
-    bound = tied = 0
-    rows = data_rows(table)
-    total = len(rows)
-
-    for row in rows:
-        expected = expected_of(row)
-        actual = table.number(row, actual_meaning)
-        if expected is None or actual is None:
-            continue
-        bound += 1
-        difference = expected - actual
-        if ctx.is_zero(difference):
-            tied += 1
-        else:
-            diffs.append(_RowDiff(row, expected, actual, difference))
-
-    return diffs, RowCoverage(rows_total=total, rows_bound=bound, rows_tied=tied)
-
-
-def _figure_from_rows(
-    tool: BaseTool,
-    ctx: ToolContext,
-    check_id: str,
-    *,
-    what: str,
-    diffs: list[_RowDiff],
-    coverage: RowCoverage,
-    args: dict[str, Any],
-) -> Figure:
-    impact = sum((abs(diff.difference) for diff in diffs), Decimal(0))
-    unbound = coverage.rows_total - coverage.rows_bound
-
-    return tool.figure(
-        check_id,
-        # Complete coverage *and* nothing differing. Either alone is not a pass.
-        ok=coverage.complete,
-        summary=(
-            f"{what}: {coverage.rows_tied:,} of {coverage.rows_total:,} rows agree"
-            f"{f', {len(diffs):,} differ by {impact} in total' if diffs else ''}"
-            f"{f', {unbound:,} row(s) had no comparable figure' if unbound else ''}"
-        ),
-        exception_count=len(diffs) + unbound,
-        financial_impact=impact or None,
-        coverage=coverage,
-        samples=worst_first([diff.as_sample() for diff in diffs]),
-        numbers=[impact, *(diff.difference for diff in diffs)],
-        args=args,
-    )
-
-
-_IMPLAUSIBLE_TIE_RATE: Final = 0.5
-"""Below this, the formula is wrong rather than the data. See RecalcLeaveBalanceTool."""
-
-
-class RecalcAccrualTool(BaseTool):
-    """Does the FTE and non-FTE split add up to the total the workbook states, per employee?
-
-    The split is what decides which expense account each amount reaches, so a row whose
-    halves do not sum to its own total is either a classification error or a broken formula
-    — and either way the posted entry is wrong in a way no grand total reveals.
-    """
-
-    name = "recalc_accrual"
-    signature = {  # noqa: RUF012
-        "table": {"type": "string", "description": "Table holding the employee-level working"},
-    }
-
-    def run(
-        self, ctx: ToolContext, check_id: str, *, table: str = "calculation", **_: Any
-    ) -> list[Figure]:
-        bound = ctx.table(table)
-        args = {"table": table}
-
-        def expected(row: int) -> Decimal | None:
-            fte = bound.number(row, "fte_accrual")
-            non_fte = bound.number(row, "non_fte_accrual")
-            if fte is None and non_fte is None:
-                return None
-            return (fte or Decimal(0)) + (non_fte or Decimal(0))
-
-        diffs, coverage = _compare_rows(ctx, bound, expected, "total_accrual")
-        return [
-            _figure_from_rows(
-                self,
-                ctx,
-                check_id,
-                what="FTE plus non-FTE against the stated total",
-                diffs=diffs,
-                coverage=coverage,
-                args=args,
-            )
-        ]
-
-
-class RecalcLeaveBalanceTool(BaseTool):
-    """Does earned minus taken equal the closing balance, per employee and per leave type?
-
-    The balance is the quantity being valued, so an error here scales linearly into the
-    entry. Both legs are checked independently: a row missing its RTT inputs still has its
-    CP balance verified, because gating the whole row on every input would understate how
-    much was actually established.
-    """
-
-    name = "recalc_leave_balance"
-    signature = {"table": {"type": "string"}}  # noqa: RUF012
-
-    def run(
-        self, ctx: ToolContext, check_id: str, *, table: str = "calculation", **_: Any
-    ) -> list[Figure]:
-        bound = ctx.table(table)
-        figures: list[Figure] = []
-
-        for leg, earned, taken, balance in (
-            ("CP", "cp_earned", "cp_taken", "cp_balance"),
-            ("RTT", "rtt_earned", "rtt_taken", "rtt_balance"),
-        ):
-            if not all(bound.has(meaning) for meaning in (earned, taken, balance)):
-                figures.append(
-                    self.figure(
-                        check_id,
-                        ok=None,
-                        summary=f"{leg} leave columns are not all present, so the movement "
-                        "cannot be recalculated",
-                        decisive=False,
-                        args={"table": table, "leg": leg},
-                        error=f"{leg.lower()}_columns_missing",
-                    )
-                )
-                continue
-
-            def expected(row: int, earned: str = earned, taken: str = taken) -> Decimal | None:
-                got = bound.number(row, earned)
-                used = bound.number(row, taken)
-                if got is None or used is None:
-                    return None
-                # Floored at zero: rows that have taken more than they have earned to date
-                # would otherwise *reduce* the provision. One sample file has 965 of them.
-                return max(got - used, Decimal(0))
-
-            diffs, coverage = _compare_rows(ctx, bound, expected, balance)
-
-            # A movement that disagrees with nearly every row is not 2,000 wrong rows: it
-            # is the wrong formula for this workbook's convention — a carry-forward the
-            # columns do not show, most likely. Reporting that as a failure would be a
-            # confident false finding, so it reports as unable to validate instead.
-            if coverage.rows_bound and coverage.tie_rate < _IMPLAUSIBLE_TIE_RATE:
-                figures.append(
-                    self.figure(
-                        check_id,
-                        ok=None,
-                        summary=(
-                            f"{leg} earned minus taken matches only "
-                            f"{coverage.rows_tied:,} of {coverage.rows_bound:,} rows, so this "
-                            "workbook derives the balance some other way; the movement cannot "
-                            "be re-performed from the columns present"
-                        ),
-                        decisive=False,
-                        coverage=coverage,
-                        args={"table": table, "leg": leg},
-                        error=f"{leg.lower()}_convention_unknown",
-                    )
-                )
-                continue
-
-            figures.append(
-                _figure_from_rows(
-                    self,
-                    ctx,
-                    check_id,
-                    what=f"{leg} earned minus taken against the stated balance",
-                    diffs=diffs,
-                    coverage=coverage,
-                    args={"table": table, "leg": leg},
-                )
-            )
-
-        return figures
 
 
 class NegativeScanTool(BaseTool):
@@ -350,6 +148,128 @@ class ClassificationCheckTool(BaseTool):
                 args=args,
             )
         ]
+
+
+class RttBalanceReperformTool(BaseTool):
+    """Rebuilds the RTT days actually valued, from the days earned to date and days taken.
+
+    Not declared as a ``reperform`` identity because the rule it reproduces is not one line of
+    arithmetic. The days earned to date are ``rtt_earned / 12 * months_to_accrue``, and a plain
+    ``max(earned_to_date - rtt_taken, 0)`` is wrong on both sample workbooks: whenever "Pris
+    RTT" is blank the file's own stated balance is zero, not the earned-to-date amount nothing
+    has yet reduced - true on every one of 547 and 527 such rows, never once the exception.
+
+    Two blanks are folded to zero rather than left missing, both verified against real data
+    rather than assumed. "Pris RTT" blank is the rule above. "Acquis RTT" blank is a different,
+    entirely ordinary population: 137 and 132 employees on the two workbooks who are properly
+    FTE-classified, have real CP activity, and simply have no RTT entitlement this period - the
+    file states their balance as zero too, on all of them. Declaring either with ``reperform``'s
+    "missing propagates" rule would read these employees as unbound rather than tied, which
+    would leave this check permanently short of full coverage - never a pass - on a workbook
+    where nothing is wrong, for a population this large. A genuinely unresolved row still is:
+    two employees on 305800.xlsx carry an unmapped `#N/A` staffing type with every CP and RTT
+    column blank, and those two are correctly reported as unbound by the equivalent gap in
+    ``cp_provision_builds_up``, because nothing here manufactures a zero for a row that is
+    actually missing data rather than stating a real one.
+    """
+
+    name = "rtt_balance_reperforms"
+    signature = {"table": {"type": "string"}}  # noqa: RUF012
+
+    def run(
+        self, ctx: ToolContext, check_id: str, *, table: str = "calculation", **_: Any
+    ) -> list[Figure]:
+        bound = ctx.table(table)
+        args = {"table": table}
+
+        needed = ("rtt_earned", "months_to_accrue", "rtt_balance_days")
+        missing = [meaning for meaning in needed if not bound.has(meaning)]
+        if missing:
+            return [
+                self.figure(
+                    check_id,
+                    ok=None,
+                    summary=(
+                        f"this workbook has no {', '.join(missing)} column, so the RTT "
+                        "balance cannot be re-performed"
+                    ),
+                    args=args,
+                    error="rtt_balance_columns_missing",
+                )
+            ]
+
+        rows = data_rows(bound)
+        diffs: list[dict[str, Any]] = []
+        checked = tied = 0
+        for row in rows:
+            months = bound.number(row, "months_to_accrue")
+            actual = bound.number(row, "rtt_balance_days")
+            if months is None or actual is None:
+                continue
+            earned = bound.number(row, "rtt_earned") or Decimal(0)
+            taken = bound.number(row, "rtt_taken") or Decimal(0)
+
+            earned_to_date = earned / 12 * months
+            expected = Decimal(0) if taken == 0 else max(earned_to_date - taken, Decimal(0))
+
+            checked += 1
+            difference = expected - actual
+            if abs(difference) <= ctx.tolerance:
+                tied += 1
+            else:
+                diffs.append(
+                    {
+                        "row": row,
+                        "cell": bound.cell_ref(row, "rtt_balance_days").cell,
+                        "expected": expected,
+                        "actual": actual,
+                        "difference": difference,
+                    }
+                )
+
+        coverage = RowCoverage(rows_total=len(rows), rows_bound=checked, rows_tied=tied)
+        if coverage.rows_bound and coverage.tie_rate < _MIN_TIE_RATE:
+            return [
+                self.figure(
+                    check_id,
+                    ok=None,
+                    summary=(
+                        f"RTT balance days: only {coverage.rows_tied:,} of "
+                        f"{coverage.rows_bound:,} records agree, so this workbook derives the "
+                        "figure some other way and it cannot be re-performed from the columns "
+                        "present"
+                    ),
+                    coverage=coverage,
+                    args=args,
+                    error="rtt_balance_convention_unknown",
+                )
+            ]
+
+        impact = sum((abs(diff["difference"]) for diff in diffs), Decimal(0))
+        unbound = coverage.rows_total - coverage.rows_bound
+        return [
+            self.figure(
+                check_id,
+                ok=coverage.complete,
+                summary=(
+                    f"RTT balance days: {coverage.rows_tied:,} of {coverage.rows_total:,} rows "
+                    f"agree{f', {len(diffs):,} differ by {impact} in total' if diffs else ''}"
+                    f"{f', {unbound:,} row(s) had no comparable figure' if unbound else ''}"
+                ),
+                exception_count=len(diffs) + unbound,
+                financial_impact=impact or None,
+                coverage=coverage,
+                samples=worst_first(diffs),
+                numbers=[impact, *(diff["difference"] for diff in diffs)],
+                args=args,
+            )
+        ]
+
+
+_MIN_TIE_RATE: Final = 0.5
+"""Below this, the blank-means-zero convention verified on the sample workbooks is the wrong
+one for this file, and reporting thousands of exceptions would be the harness's error, not the
+preparer's - the same guard `cp_movement` and `rtt_movement` carry."""
 
 
 class PopulationReconcileTool(BaseTool):

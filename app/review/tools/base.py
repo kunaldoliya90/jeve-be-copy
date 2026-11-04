@@ -27,7 +27,7 @@ from review.models.context import BusinessRules, MethodologySpec
 from review.models.evidence import Figure, MethodologyReading, PictureReading, RowCoverage
 from review.models.review_context import ReviewContext
 from review.models.sheet_map import SheetMap
-from review.models.workbook import CellRef, Defect, TableRef
+from review.models.workbook import CellRef, Defect, FormulaShape, TableRef
 from review.models.workbook_data import CellValue, Sheet, WorkbookData
 from review.utils.sheet_utils import column_index
 
@@ -115,6 +115,7 @@ class ToolContext:
         "defects",
         "facts",
         "figure_samples",
+        "formula_shapes",
         "je_type_args",
         "methodology",
         "methodology_read",
@@ -131,6 +132,7 @@ class ToolContext:
         facts: dict[str, Any] | None = None,
         je_type_args: dict[str, Any] | None = None,
         defects: tuple[Defect, ...] = (),
+        formula_shapes: tuple[FormulaShape, ...] = (),
         methodology: MethodologySpec | None = None,
         methodology_read: MethodologyReading | None = None,
         picture_readings: dict[str, PictureReading] | None = None,
@@ -142,6 +144,10 @@ class ToolContext:
         self.facts = facts or {}
         self.je_type_args = je_type_args or {}
         self.defects = defects
+        # Runs of the same formula down a column, measured at step 5. Here for the same
+        # reason the defects are: they are facts about the workbook that a tool compares
+        # something against, and nothing computes a figure from either.
+        self.formula_shapes = formula_shapes
         self.methodology = methodology
         self.methodology_read = methodology_read
         self.picture_readings = picture_readings or {}
@@ -161,6 +167,7 @@ class ToolContext:
             rules=rules,
             facts=ctx.facts,
             defects=ctx.profile.defects if ctx.profile else (),
+            formula_shapes=ctx.profile.formula_shapes if ctx.profile else (),
         )
 
     def table(self, name: str) -> BoundTable:

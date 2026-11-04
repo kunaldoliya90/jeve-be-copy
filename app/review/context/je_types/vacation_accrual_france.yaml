@@ -8,7 +8,7 @@
 # Business context for everything below: the `vacation-accrual` skill.
 
 id: vacation-accrual-france
-version: 2
+version: 10
 name: France vacation accrual
 process: Record to Report
 sub_process: Payroll
@@ -63,6 +63,231 @@ methodology:
       reproduced because it is what was posted, and reported per affected row rather than
       silently accepted or silently corrected.
 
+# --- the arithmetic that must hold on every record ---------------------------------------
+# Read by step 13 through the `reperform` tool. Each identity is one line of arithmetic over
+# the columns this type's working declares, and `against` names the column holding the
+# workbook's own answer for the same quantity. These were Python until version 4, which
+# meant the business could read its own arithmetic only by reading code; a country whose
+# leave convention differs is now a YAML edit rather than a new tool.
+#
+# Note the difference from `recalculation:` below, which is deliberate. An identity is
+# written over **column meanings** (`cp_earned`), because it is one line of arithmetic over
+# columns a reviewer can point at and nothing about it is displayed per input. The entry
+# formula is written over **declared inputs** (`fte_amount`) because each of those carries a
+# unit and a source that the work paper shows beside every citation. Giving the identities
+# the same machinery would mean ten more declarations whose units nobody reads.
+#
+# `tolerance` is per record and omitted where the business-wide tolerance applies. The
+# valuation identity states a cent because a product is rounded to the currency's scale
+# before it is stored, so a cent of difference there is the rounding and not an exception.
+#
+# `min_tie_rate` is the guard against a confident false finding: an identity that fails on
+# nearly every row is the wrong convention for this workbook, not a workbook where every row
+# is wrong. Both leave movements carry it because these files derive the balance from a
+# carry-forward the columns do not show - 2,000 reported exceptions would all have been the
+# harness's error, not the preparer's.
+reperformance:
+  table: calculation
+  record_key: employee_ref
+  identities:
+    - id: fte_split_sums
+      label: FTE plus non-FTE against the stated total
+      expression: fte_accrual + non_fte_accrual
+      against: total_accrual
+
+    - id: rtt_valuation
+      label: Balance in days times the daily rate
+      expression: max(rtt_balance_days, 0) * daily_salary_rate
+      against: rtt_accrual
+      tolerance: 0.01
+
+    - id: cp_movement
+      label: CP earned minus taken against the stated balance
+      expression: max(cp_earned - cp_taken, 0)
+      against: cp_balance
+      min_tie_rate: 0.5
+
+    - id: rtt_movement
+      label: RTT earned minus taken against the stated balance
+      expression: max(rtt_earned - rtt_taken, 0)
+      against: rtt_balance
+      min_tie_rate: 0.5
+
+    # The workbook's own stated total is itself reproducible from its two leg amounts: the
+    # CP provision the payroll extract states, plus a twelfth of the RTT accrual (the same
+    # convention `methodology.notes` describes). Verified against both sample French
+    # workbooks before being declared: 2,271 of 2,271 rows on 305800.xlsx and 2,280 of 2,280
+    # on 236264.xlsx tie to the cent. So a tampered CP provision or RTT accrual now surfaces
+    # here rather than passing silently because nothing downstream re-read them.
+    - id: cp_rtt_composition
+      label: CP provision plus a twelfth of the RTT accrual against the stated total
+      expression: cp_provision + (rtt_accrual / 12)
+      against: total_accrual
+      tolerance: 0.01
+
+    # The CP provision is itself reproducible, one level further back: the payroll extract
+    # types the prior and the current period's provision as two separate columns, and the
+    # "Total Provision CP" the entry is built from is their sum. Either leg is blank in a
+    # period it does not apply to - a new joiner has no N-1 leg, for instance - and the
+    # business's own total simply omits it, which is what `coalesce` reproduces rather than
+    # reading those rows as incomplete. Verified on both workbooks: every one of the 1,999 and
+    # 1,961 rows where neither leg is blank ties exactly, and so does every one of the 274 and
+    # 319 rows where one leg is.
+    - id: cp_provision_builds_up
+      label: Prior plus current period CP provision against the stated total
+      expression: coalesce(cp_provision_prior, 0) + coalesce(cp_provision_current, 0)
+      against: cp_provision
+      tolerance: 0.01
+
+# --- how the posted amount is regenerated from first principles --------------------------
+# Read by step 13c. Deterministic code evaluates every line of this; no model sees any of it.
+#
+# The formula, from 2026-11-04 (v8): each employee's CP provision plus a twelfth of their RTT
+# accrual, summed over the population, against the debit side of the posted entry read from
+# the posting tab's own lines - a different table, a different tab, so the two sides are
+# independent and a difference between them means something. This is the same expression
+# `cp_rtt_composition` already re-performs as `accrual_composition_reperforms` (near-universal
+# coverage on both sample files, 2,271 of 2,273 and 2,280 of 2,280 rows), now promoted to be
+# the headline figure rather than a check beside it - the business asked for the top card
+# itself, not just a nearby block, to move when the CP provision or RTT accrual is wrong.
+#
+# This reverses the version-7 choice, which built the formula from FTE and non-FTE accrual
+# instead specifically *because* CP provision could not be independently rebuilt from the
+# columns on most rows - that finding was about `cp_provision_builds_up` (CP provision from
+# its own prior/current legs, ~4% coverage), not about this composition, which the business
+# had already verified to near-total coverage. FTE plus non-FTE is not dropped: it moves to
+# `fte_split` below, re-performed and compared the same way, corroborating rather than
+# deciding - a tampered split still surfaces, on `fte_split_aggregates` and in the `fte_split`
+# leg here, just not as this card's headline number.
+#
+# `provisional_basis` stays true until the business signs off this formula and the +/-1%
+# tolerance. The arithmetic runs either way; what changes is whether agreement may be relied
+# on, and the work paper says so on its face.
+#
+# `tolerance_pct` widened from 0.1 to 1 (2026-11-04), on business instruction, to comfortably
+# clear the per-record rounding this formula carries that the old fte_accrual + non_fte_accrual
+# one did not: dividing the RTT accrual by twelve and rounding each record to the cent leaves
+# a few cents of aggregate dust (-0.03 on 236264.xlsx, -0.01 on 305800.xlsx) that 0.1% of a
+# multi-million-euro entry (tens of thousands of euros) already swallowed many times over - the
+# widening is headroom for a future, smaller entry of this type, not a response to these two.
+# Checked and ruled out as the cause: pre-rounding either leg to the cent before combining them
+# (matching the worked example's own intermediate rounding) gives the identical total either
+# way on both real files, and rounding `rtt_accrual` itself to the cent first makes 305800.xlsx
+# worse (+0.29 instead of -0.01) - that column carries more than two decimals of real precision
+# in the file, not a float artefact to clean up, and reading it as 2-decimal currency is the
+# bug a "fix" there would have introduced. The dust is the data, not the arithmetic.
+recalculation:
+  table: calculation
+  record_key: employee_ref
+  stated: total_accrual
+  formula: cp_provision + (rtt_accrual / 12)
+  sign: a positive amount is a debit to the expense accounts
+  day_count: the approved denominator stated in the methodology, never an assumed 30
+  tolerance_pct: 1
+  row_tolerance: 0.01
+  provisional_basis: true
+  rounding: { decimals: 2, mode: half_up }
+  currency: { meaning: currency, default: EUR }
+  booked: { method: posting_debits, table: je_posting, amount: line_amount, account: account }
+  worked_example: >
+    One record of the working: a CP provision of 12,409.29 plus a twelfth of its 1,766.46 RTT
+    accrual gives 12,556.50, which is the amount the workbook states as that employee's total.
+    The same record's FTE and non-FTE accruals, 12,556.50 and 0.00, also add to 12,556.50 -
+    re-performed and compared separately below, since they corroborate the figure rather than
+    build it. Every record's CP-provision-plus-a-twelfth-RTT added together gives the entry.
+  # The same record as `worked_example` above, carried one level further back for a reader who
+  # has never seen this formula: where the 1,766.46 RTT accrual and the 12,409.29 CP provision
+  # themselves come from. Fixed numbers, chosen once and checked against the identities above
+  # rather than read live from any particular review - the same convention `worked_example`
+  # already follows, so a new review never changes what this section says.
+  explained:
+    intro: >
+      Here is the calculation in plain language, using employee 1073 - the same record
+      `worked_example` above is drawn from.
+    context: >
+      The two legs are valued differently. CP (paid holiday) is a liability the business
+      already knows in full, carried forward as last year's provision plus this year's. RTT is
+      earned gradually over the year, so only the days not yet taken are still owed, and only
+      a twelfth of their value is added each month - the same twelfth `methodology.notes`
+      describes.
+    steps:
+      - label: RTT days earned so far
+        detail: The yearly RTT entitlement, divided by twelve and multiplied by months worked.
+        example: "10 / 12 x 8 = 6.67 days"
+      - label: Unused RTT days
+        detail: Days earned so far, minus days already taken, floored at zero.
+        example: "6.67 - 1 = 5.67 days"
+      - label: Value the unused days
+        detail: Unused RTT days, times the employee's daily salary rate.
+        example: "5.67 x EUR 311.73 = EUR 1,766.46"
+      - label: A twelfth of that value
+        detail: Only a twelfth of the RTT value is accrued this month.
+        example: "EUR 1,766.46 / 12 = EUR 147.21"
+      - label: Add the paid-holiday provision
+        detail: The CP provision, carried forward from last year plus this year.
+        example: "EUR 147.21 + EUR 12,409.29 = EUR 12,556.50"
+      - label: FTE and non-FTE employees only
+        detail: Other staffing types fall outside this review's population.
+        example: Employee 1073 is FTE.
+    summary: >
+      In one sentence: the total accrual is one month's share of the value of unused RTT days,
+      plus the full value of unused paid holidays, for FTE and non-FTE employees only.
+    caveats:
+      - The amount excludes employer social charges.
+      - Only the RTT portion is divided by twelve; the paid-holiday amount is counted in full.
+      - >-
+        Both legs are floored at zero so a balance that has been overspent never turns an
+        employee's accrual negative - there is no separate rule that zeroes RTT simply because
+        none of it has been taken yet.
+  inputs:
+    - id: cp_provision
+      meaning: cp_provision
+      unit: currency
+      required: true
+      description: The CP provision as the payroll extract states it for the employee.
+    - id: rtt_accrual
+      meaning: rtt_accrual
+      unit: currency
+      required: true
+      description: >
+        The RTT accrual the workbook states; a twelfth of it is added to the CP provision to
+        arrive at the employee's total.
+    - id: fte_amount
+      meaning: fte_accrual
+      unit: currency
+      required: false
+      description: >
+        The employee's FTE share of the accrual. Carried for the corroborating split below,
+        not for the main formula.
+    - id: non_fte_amount
+      meaning: non_fte_accrual
+      unit: currency
+      required: false
+      description: The non-FTE share, carried for the same corroboration.
+    - id: rtt_days
+      meaning: rtt_balance_days
+      unit: days
+      required: false
+      description: Remaining RTT days at the reporting date, floored at zero.
+    - id: daily_rate
+      meaning: daily_salary_rate
+      unit: currency_per_day
+      required: false
+      description: The daily salary rate the RTT accrual is valued at.
+  derive:
+    - id: fte_split
+      expression: fte_amount + non_fte_amount
+      unit: currency
+      agrees_with: total_accrual
+      description: >
+        FTE plus non-FTE accrual, re-performed and compared with the stated total - the
+        formula this card used before version 8; corroborating now rather than deciding.
+    - id: rtt_amount
+      expression: max(rtt_days, 0) * daily_rate
+      unit: currency
+      agrees_with: rtt_accrual
+      description: RTT accrual, re-performed from the remaining days and the daily rate.
+
 accounts:
   source: master_data
   fte_expense: "720008"
@@ -78,9 +303,15 @@ population:
 tables:
   calculation:
     required: true
+    # What this type's checks actually read. The leave columns were missing until version 4,
+    # when declaring the arithmetic here made the omission visible: the tools read them, the
+    # file never asked for them, so step 12 could not have told anybody they were absent.
     meanings:
-      [employee_ref, company_code, cost_center, staffing_type, cp_provision, rtt_provision,
-       daily_salary_rate, currency, fte_accrual, non_fte_accrual, total_accrual]
+      [employee_ref, company_code, cost_center, staffing_type, fte_classification,
+       cp_earned, cp_taken, cp_balance, cp_provision, cp_provision_prior, cp_provision_current,
+       rtt_earned, rtt_taken, rtt_balance, rtt_balance_days, rtt_accrual, rtt_provision,
+       months_to_accrue, daily_salary_rate, currency, fte_accrual, non_fte_accrual,
+       total_accrual]
   employee_master:
     required: true
     meanings: [employee_ref, sap_company, cost_center, staffing_type, start_date, active]
@@ -138,41 +369,57 @@ evidence:
     corroborate: [je_total, hash_total]
 
 # --- what the review is scored on -------------------------------------------------------
-# Confirmed by the business on 2026-10-20. Weights total 100, which the loader enforces.
+# Version 7 moved this type onto the six-parameter model every entry type now reports under,
+# weighted 30/10/30/10/10/10. This is a business decision superseding the eight-area weights
+# confirmed on 2026-10-20 (version 6, still readable in this file's history), and it needs
+# its own business sign-off before being relied on in anger - the same caveat the entry
+# recalculation's own tolerance already carries as `provisional_basis`.
 #
-# Re-performance carries the most because it is the only area that establishes the number
-# itself; JE reconciliation is separate from it because "is the number right" and "did the
-# right number get posted" are different failures. The employee-level areas are scored by
-# exception rate and impact share, not weakest check, which would score three bad rows in
-# forty thousand as a zero.
-#
-# Two areas the payroll design scored are deliberately absent here, also confirmed:
-#   PII    - employee data on the calculation tab is expected for this JE type, so scoring
-#            it would cap every review at 90 forever. It runs as an observation instead and
-#            flags personal data reaching the SAP-facing posting tab, where it does belong.
-#   Trend  - max_change_pct is unset, so a trend area would score half credit on every
-#            review and cap the score for a reason unrelated to the entry. The rules and
-#            tooling stay in business_rules.yaml; adding the area later is a YAML edit.
+# What moved where:
+#   calculation_accuracy combines the old accrual_reperformance and je_reconciliation (the
+#     number itself, and whether the right number got posted) with the four employee-level
+#     checks that used to be scored separately by exception rate and impact share:
+#     population, classification, salary_validation and leave_validation. All of it now
+#     scores by weakest check. That is a real tightening, deliberately accepted: a handful
+#     of bad employee rows out of thousands now fails this area outright, where it used to
+#     score in the high nineties. A reviewer reading "0/100" here must check which check
+#     failed before reading it as the whole calculation being wrong.
+#   pii is no longer an observation. Employee data on the calculation tab and the employee
+#     master is still expected and still not a finding; only a leak onto the SAP-facing
+#     posting tab fails this area, so it is expected to read 100 on almost every review.
+#   trend is new: business_rules.yaml now states a (placeholder) deviation threshold, so the
+#     check that used to always report "no threshold configured" can now fail. It still
+#     passes wherever this entry type has no prior review to compare against.
+#   evidence_appropriateness is new: it turns step 9's own corroboration of the recognised
+#     entry type - already surfaced as `je_type_corroborated` - into a scored parameter
+#     instead of a fact nothing but the UI's header strip read. AI-E itself is disabled for
+#     now (2026-11-04): a live run flagged a cost-centre mismatch the business has not yet
+#     reviewed, so `evidence_matches_je_type` always reports `missing_evidence` (zero credit,
+#     needs a person) rather than calling the model - see
+#     `review.orchestrator.orchestrator._gate_on_evidence`.
 areas:
-  evidence_completeness: { weight: 10, method: baseline_share }
-  population: { weight: 15, method: exception_rate }
-  classification: { weight: 10, method: exception_rate }
-  salary_validation: { weight: 10, method: impact_share }
-  leave_validation: { weight: 10, method: impact_share }
-  accrual_reperformance: { weight: 25, method: weakest_check }
-  je_reconciliation: { weight: 15, method: weakest_check }
-  period: { weight: 5, method: weakest_check }
+  evidence_completeness: { weight: 30, method: baseline_share }
+  evidence_appropriateness: { weight: 10, method: weakest_check }
+  calculation_accuracy: { weight: 30, method: weakest_check }
+  period: { weight: 10, method: weakest_check }
+  pii: { weight: 10, method: weakest_check }
+  trend: { weight: 10, method: weakest_check }
 
 checks:
+  # Whether a required layer is present is something code can establish outright - a sheet
+  # either satisfies a role or it does not - so this is decided by the figure, never by a
+  # model's reading of the same register. Coverage is over the required layers only: one of
+  # four present is partial, by RowCoverage, the same way a part-tied recalculation is
+  # partial rather than failed outright; none of them present is the one case that fails.
   - id: evidence_baseline
     area: evidence_completeness
-    question: Are the four required evidence items present and verified?
-    decided_by: judgement
+    question: Are the required evidence items present?
+    decided_by: figures
     risk: The entry is unsupported and nobody can re-perform it later.
     recipe: { tool: evidence_register, args: {} }
 
   - id: population_complete
-    area: population
+    area: calculation_accuracy
     question: >
       Is every employee in the working present in the employee master, with no duplicates,
       no unexpected additions and nobody inactive at the reporting date?
@@ -185,7 +432,7 @@ checks:
   # master needs a joinable employee reference, and in these files it is redacted; the
   # population check carries that gap.
   - id: classification_matches_master
-    area: classification
+    area: calculation_accuracy
     question: >
       Does each employee's amount sit on the side their FTE or non-FTE classification says
       it should?
@@ -194,30 +441,69 @@ checks:
     recipe: { tool: classification_check, args: { table: calculation } }
 
   - id: salary_agrees_with_source
-    area: salary_validation
+    area: calculation_accuracy
     question: Does the salary used agree with the source, and is it effective at the date?
     decided_by: figures
     risk: An outdated or mismapped salary misstates every day of accrued leave.
     recipe: { tool: salary_validate, args: { table: calculation, master: employee_master } }
 
   - id: salary_per_day_follows_methodology
-    area: salary_validation
+    area: calculation_accuracy
     question: >
       Does the leave balance times the daily rate give the accrual the workbook states,
       employee by employee?
     decided_by: figures
     risk: An amount that cannot be rebuilt from its own inputs has no basis.
-    recipe: { tool: recalc_salary_per_day, args: { table: calculation } }
+    recipe: { tool: reperform, args: { table: calculation, identities: [rtt_valuation] } }
 
   - id: leave_balance_recalculates
-    area: leave_validation
+    area: calculation_accuracy
     question: Does opening + earned - taken +/- adjustments equal the closing balance?
     decided_by: figures
     risk: The leave balance is the quantity being valued; an error here scales linearly.
-    recipe: { tool: recalc_leave_balance, args: { table: calculation } }
+    recipe:
+      { tool: reperform,
+        args: { table: calculation, identities: [cp_movement, rtt_movement] } }
+
+  # Not declared as a `reperform` identity: the rule it reproduces is not one line of
+  # arithmetic. Verified on both sample workbooks that a blank "Pris RTT" does not carry the
+  # full earned-to-date balance forward - the file's own stated balance is zero on every one
+  # of 547 and 527 such rows, never the earned amount a plain `max(earned - 0, 0)` would give.
+  # An identity that read the gap as missing would be wrong twice over: it would count a
+  # confident zero as unbound, and the balance this check establishes feeds the valuation
+  # check above through `rtt_accrual`, so a permanently-partial coverage here would be a
+  # landmine on every clean file of this type.
+  - id: rtt_balance_rebuilds
+    area: calculation_accuracy
+    question: >
+      Does the RTT balance used for valuation reproduce from the days earned to date and the
+      days taken, employee by employee?
+    decided_by: figures
+    risk: >
+      The valuation check above trusts this balance as given; an error here reaches the
+      posted amount through a column nothing upstream of it re-reads.
+    recipe: { tool: rtt_balance_reperforms, args: { table: calculation } }
+
+  # The entry-level re-performance, and the only check that sets the posted amount against a
+  # figure rebuilt from the inputs rather than against another column of the same workbook.
+  # It overlaps `fte_split_aggregates` by design: that check asks whether each row's split
+  # sums to its own total, this one asks whether the entry can be produced again at all and
+  # whether what was produced is what was booked. The first can hold while the second fails,
+  # which is precisely the case nothing else here would catch.
+  - id: entry_total_recalculates
+    area: calculation_accuracy
+    question: >
+      Can the amount that was posted be regenerated from the approved formula, record by
+      record, and does the total agree with what was booked, within tolerance?
+    decided_by: figures
+    risk: >
+      An entry that cannot be reproduced from its own inputs has no basis a reviewer can
+      stand behind, and a difference against the posted amount is money in the wrong period
+      or the wrong account.
+    recipe: { tool: recalc_entry_total, args: { table: calculation } }
 
   - id: accrual_reperforms
-    area: accrual_reperformance
+    area: calculation_accuracy
     question: >
       Does an independent recalculation of eligible leave times salary per day agree with
       the working, row by row?
@@ -225,24 +511,56 @@ checks:
     risk: >
       The whole purpose of the review. A total that agrees while rows cancel out is a
       coincidence; row-level agreement is the evidence.
-    recipe: { tool: recalc_accrual, args: { table: calculation } }
+    recipe: { tool: reperform, args: { table: calculation, identities: [fte_split_sums] } }
 
   - id: negative_accruals_explained
-    area: accrual_reperformance
+    area: calculation_accuracy
     question: Are any negative employee-level accruals expected rather than bad data?
     decided_by: figures
     risk: A negative accrual is either a genuine adjustment or a mapping error.
     recipe: { tool: negative_scan, args: { table: calculation, column: total_accrual } }
 
+  # Catches what `accrual_reperforms` cannot: that check only asks whether the split sums
+  # to the total the workbook already states, so a CP provision or RTT accrual edited
+  # without touching the total or the split would still tie. This check rebuilds the total
+  # from the two components an employee's accrual is actually made of.
+  - id: accrual_composition_reperforms
+    area: calculation_accuracy
+    question: >
+      Does the stated total equal the CP provision plus a twelfth of the RTT accrual,
+      employee by employee?
+    decided_by: figures
+    risk: >
+      An employee's total that does not tie to its own CP and RTT components carries an
+      unexplained adjustment, or one of those components was changed after the total was
+      struck.
+    recipe: { tool: reperform, args: { table: calculation, identities: [cp_rtt_composition] } }
+
+  # Catches what `accrual_composition_reperforms` cannot: that check takes the CP provision
+  # itself as given, so an edit to the prior- or current-period leg that nobody re-struck the
+  # total from would still tie there. This rebuilds the CP provision from the two columns the
+  # payroll extract actually types.
+  - id: cp_provision_rebuilds
+    area: calculation_accuracy
+    question: >
+      Does the stated CP provision equal the prior plus the current period's provision,
+      employee by employee?
+    decided_by: figures
+    risk: >
+      A CP provision that does not tie to its own two periods carries an unexplained
+      adjustment, or one of those periods was changed after the total was struck.
+    recipe:
+      { tool: reperform, args: { table: calculation, identities: [cp_provision_builds_up] } }
+
   - id: fte_split_aggregates
-    area: je_reconciliation
+    area: calculation_accuracy
     question: Does FTE accrual plus non-FTE accrual equal the stated total, per employee?
     decided_by: figures
     risk: A split that does not sum hides an employee counted twice or not at all.
-    recipe: { tool: recalc_accrual, args: { table: calculation } }
+    recipe: { tool: reperform, args: { table: calculation, identities: [fte_split_sums] } }
 
   - id: working_ties_to_posting
-    area: je_reconciliation
+    area: calculation_accuracy
     question: Does the employee-level calculation tie to the posted entry, by company code?
     decided_by: figures
     risk: Amounts lost between the working and the entry still leave a grand total agreeing.
@@ -254,21 +572,21 @@ checks:
     recipe: { tool: rollup_chain, args: { hops: [calculation, je_posting] } }
 
   - id: accounts_mapped_correctly
-    area: je_reconciliation
+    area: calculation_accuracy
     question: Are FTE, non-FTE and liability amounts posted to the accounts the master states?
     decided_by: figures
     risk: The right total in the wrong account misstates the expense split.
     recipe: { tool: account_mapping, args: { table: je_posting, master: entity_master } }
 
   - id: entry_balances
-    area: je_reconciliation
+    area: calculation_accuracy
     question: Do total debits equal total credits, overall and per company code and currency?
     decided_by: figures
     risk: An unbalanced entry will not post, or will post against a suspense account.
     recipe: { tool: balance, args: { table: je_posting, group_by: [company_code, currency] } }
 
   - id: stated_totals_agree
-    area: je_reconciliation
+    area: calculation_accuracy
     question: Do the hash total and JE total stated on the entry equal the sum of the lines?
     decided_by: figures
     risk: The preparer's own control total is stale or hardcoded.
@@ -310,7 +628,7 @@ checks:
     recipe: { tool: formula_health, args: {} }
 
   - id: personal_data_located
-    area: observation
+    area: pii
     question: Where does personal data appear, and is it expected on that tab?
     decided_by: figures
     risk: >
@@ -319,6 +637,38 @@ checks:
     recipe:
       { tool: pii_scan, args: { expected_on: [calculation, employee_master],
                                 forbidden_on: [je_posting] } }
+
+  # Run as its own gated step before anything else, not through the ordinary fan-out: see
+  # `review.orchestrator.orchestrator._gate_on_evidence`. The question it settles is content,
+  # not shape - whether the identity in the calculation sheet, the employee master and any
+  # pasted screenshot agrees with the entity actually posted, never whether the right
+  # category of evidence is present (that is `evidence_completeness`, a different question).
+  - id: evidence_matches_je_type
+    area: evidence_appropriateness
+    question: >
+      Does the supporting evidence - the calculation sheet, the employee master, any pasted
+      screenshot - relate to the same entity and transaction as the entry actually posted?
+    decided_by: figures
+    risk: >
+      Evidence for the wrong entity can satisfy every other check perfectly and still be
+      evidence for somebody else's accrual; a reviewer who signs off a correctly-calculated
+      wrong entity has approved nothing.
+    recipe: { tool: evidence_appropriateness, args: {} }
+
+  # `max_change_pct` is a placeholder (business_rules.yaml) pending sign-off, and the check
+  # passes on every review of an entry type with no prior period to compare against, so this
+  # reads as a pass on nearly every review until both the threshold and a few periods of
+  # history exist.
+  - id: trend_within_tolerance
+    area: trend
+    question: >
+      Does the posted amount fall within the agreed deviation of the trailing three-month
+      average for this entry type?
+    decided_by: figures
+    risk: >
+      A liability that jumps between periods with no corresponding change in the population
+      or the rate is the cheapest sign of a basis that silently changed.
+    recipe: { tool: trend_check, args: {} }
 
 known_patterns:
   - The calculation tab links its provision columns to a payroll extract on another tab.

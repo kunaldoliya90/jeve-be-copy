@@ -36,7 +36,7 @@ def _step(check_id: str, tool: str, **args: object) -> PlanStep:
 
 
 def test_a_valid_step_passes_through_unchanged() -> None:
-    plan = _plan(_step("accrual_reperforms", "recalc_accrual", table="calculation"))
+    plan = _plan(_step("accrual_reperforms", "reperform", table="calculation"))
 
     checked = plan_check(plan, _sheet_map("calculation"))
 
@@ -47,7 +47,7 @@ def test_a_valid_step_passes_through_unchanged() -> None:
 def test_the_plan_source_survives_the_check() -> None:
     """A reader has to know whether a step came from a recipe or from a model."""
     plan = _plan(
-        _step("accrual_reperforms", "recalc_accrual", table="calculation"),
+        _step("accrual_reperforms", "reperform", table="calculation"),
         source=PlanSource.AI,
     )
 
@@ -69,12 +69,12 @@ def test_a_step_passing_an_argument_the_tool_does_not_take_is_dropped() -> None:
     This is the case that caught two misleading recipes in the context file: both named a
     master table that the tool never consulted.
     """
-    plan = _plan(_step("accrual_reperforms", "recalc_accrual", table="calculation", master="x"))
+    plan = _plan(_step("accrual_reperforms", "reperform", table="calculation", master="x"))
 
     checked = plan_check(plan, _sheet_map("calculation"))
 
     assert checked.plan.steps == ()
-    assert checked.dropped[0][1] == "recalc_accrual does not take master"
+    assert checked.dropped[0][1] == "reperform does not take master"
 
 
 def test_a_step_on_a_table_this_workbook_does_not_have_is_dropped() -> None:
@@ -89,19 +89,19 @@ def test_a_step_on_a_table_this_workbook_does_not_have_is_dropped() -> None:
 def test_only_the_first_step_for_a_check_is_kept() -> None:
     """Two figures competing to be decisive is a status nobody chose."""
     plan = _plan(
-        _step("accrual_reperforms", "recalc_accrual", table="calculation"),
+        _step("accrual_reperforms", "reperform", table="calculation"),
         _step("accrual_reperforms", "negative_scan", table="calculation"),
     )
 
     checked = plan_check(plan, _sheet_map("calculation"))
 
-    assert [step.tool for step in checked.plan.steps] == ["recalc_accrual"]
+    assert [step.tool for step in checked.plan.steps] == ["reperform"]
     assert checked.dropped[0][1] == "a step for this check was already planned"
 
 
 def test_a_dropped_step_does_not_take_the_valid_ones_with_it() -> None:
     plan = _plan(
-        _step("accrual_reperforms", "recalc_accrual", table="calculation"),
+        _step("accrual_reperforms", "reperform", table="calculation"),
         _step("entry_balances", "balance", table="je_posting"),
         _step("negative_accruals_explained", "negative_scan", table="calculation"),
     )

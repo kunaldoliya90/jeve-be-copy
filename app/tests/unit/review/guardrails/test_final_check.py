@@ -7,6 +7,8 @@ it had been verified.
 
 from decimal import Decimal
 
+import pytest
+
 from api.consts import RiskRating
 from review.guardrails.final_check import final_check
 from review.models.evidence import Figure, RowCoverage
@@ -171,13 +173,40 @@ def test_counts_are_only_allowed_when_the_outcomes_are_supplied() -> None:
 # ----------------------------------------------- faults a live run found before a test did
 
 
-def test_a_cell_reference_followed_by_a_comma_is_read_as_one_number() -> None:
-    """A live run reported both "230," and "230" from the phrase "at AH230, and"."""
+def test_a_cell_reference_is_not_a_number_anybody_quoted() -> None:
+    """Two live runs, a week apart, on the same phrase.
+
+    The first reported both "230," and "230" from "at AH230, and": the comma was being read
+    as a grouping separator. The second, after that was fixed, still reported "230" — and a
+    reviewer told to distrust a figure the report never quoted learns to ignore the list,
+    which is the one thing this guardrail cannot afford.
+    """
     report = ReportPayload(summary="Obtain support for the negative accrual at AH230, and ask why.")
 
-    untraced = final_check(report, _score(), _pack()).untraced_numbers
+    assert final_check(report, _score(), _pack()).untraced_numbers == ()
 
-    assert untraced == ("230",), "a comma is punctuation here, not a grouping separator"
+
+@pytest.mark.parametrize(
+    "prose",
+    [
+        "the exception sits at AH230",
+        "see $AH$230 on the posting tab",
+        "the largest is in AB1048576",
+        "Figure F-12 covers it",
+        "the entry posts in FY26",
+        "the period is P07",
+    ],
+)
+def test_digits_inside_an_identifier_are_part_of_a_name_not_an_amount(prose: str) -> None:
+    """A cell, a figure id and a period are names. None of them is a figure to trace."""
+    assert final_check(ReportPayload(summary=prose), _score(), _pack()).untraced_numbers == ()
+
+
+def test_a_real_figure_beside_a_cell_reference_is_still_checked() -> None:
+    """The lookbehind must not swallow the number the sentence is actually about."""
+    report = ReportPayload(summary="Confirm the -1,074.35 at cell AH230 on the posting tab.")
+
+    assert final_check(report, _score(), _pack()).untraced_numbers == ("-1,074.35",)
 
 
 def test_a_grouping_separator_still_reads_as_one_number() -> None:

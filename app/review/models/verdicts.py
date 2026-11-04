@@ -58,6 +58,12 @@ class ReviewFlag(StrEnum):
     """A re-performance figure did not cover every row. Gate rule 1."""
     NEGATIVE_ACCRUAL = "negative_accrual"
     """A negative employee-level amount. Never approved automatically."""
+    EVIDENCE_UNRELATED = "evidence_unrelated"
+    """The evidence does not relate to this entry. A clean fail still goes to a person,
+    because the remediation is to obtain the right evidence, not to re-run the check."""
+    CHECK_DISABLED = "check_disabled"
+    """This check does not currently run. Scored as `missing_evidence`, not as a finding -
+    nothing was established either way, so neither a pass nor a fail would be honest."""
 
 
 class Finding(BaseModel):

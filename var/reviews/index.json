@@ -1,22 +1,30 @@
 {
-  "rev_20261022T074956_63c71664": {
-    "review_id": "rev_20261022T074956_63c71664",
-    "file_name": "236264.xlsx",
-    "je_type": "vacation-accrual-france",
-    "status": "needs_review",
-    "score": 37.5,
-    "band": "High risk",
-    "provisional": true,
-    "created_at": "2026-10-22T07:49:56.507616+00:00"
-  },
-  "rev_20261023T015939_8037f99f": {
-    "review_id": "rev_20261023T015939_8037f99f",
+  "rev_20261104T074209_2d8bd5e2": {
+    "review_id": "rev_20261104T074209_2d8bd5e2",
     "file_name": "305800.xlsx",
     "je_type": "vacation-accrual-france",
+    "je_type_variant": "cp_rtt_france",
+    "period": "2026 P07",
     "status": "needs_review",
-    "score": 32.5,
+    "score": 30.0,
     "band": "High risk",
     "provisional": true,
-    "created_at": "2026-10-23T01:59:39.718366+00:00"
+    "created_at": "2026-11-04T07:42:09.355456+00:00",
+    "booked_total": "27905812.64",
+    "recomputed_total": "27905812.63"
+  },
+  "rev_20261104T074400_db9c20d4": {
+    "review_id": "rev_20261104T074400_db9c20d4",
+    "file_name": "305800 - Copy (6).xlsx",
+    "je_type": "vacation-accrual-france",
+    "je_type_variant": "cp_rtt_france",
+    "period": "2026 P07",
+    "status": "needs_review",
+    "score": 30.0,
+    "band": "High risk",
+    "provisional": true,
+    "created_at": "2026-11-04T07:44:00.804166+00:00",
+    "booked_total": "27905812.64",
+    "recomputed_total": "37998676.88"
   }
 }

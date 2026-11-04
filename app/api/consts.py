@@ -11,6 +11,8 @@ class ApiPath(StrEnum):
     REVIEWS = "/reviews/"
     REVIEW = "/reviews/{review_id}/"
     REVIEW_EVENTS = "/reviews/{review_id}/events/"
+    RECALCULATION_ROWS = "/reviews/{review_id}/recalculation/rows/"
+    RECALCULATION_GROUPS = "/reviews/{review_id}/recalculation/groups/"
     JE_TYPES = "/je-types/"
     JE_TYPE = "/je-types/{je_type_id}/"
 
@@ -49,6 +51,7 @@ class AICall(StrEnum):
     JUDGE = "AI-3"
     CHALLENGE = "AI-4"
     SUMMARY = "AI-5"
+    EVIDENCE_APPROPRIATENESS = "AI-E"
 
 
 class JETypeSource(StrEnum):

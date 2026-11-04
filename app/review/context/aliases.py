@@ -33,7 +33,15 @@ ALIASES: Final[dict[str, tuple[str, ...]]] = {
     "cp_earned": ("acquis cp n",),
     "cp_taken": ("pris cp n",),
     "cp_balance": ("solde cp n",),
-    "cp_provision": ("total provision cp", "provision cp n"),
+    # "provision cp n" is deliberately absent from cp_provision: both files also carry a
+    # "Total Provision CP" column one to the right of it, and first-match-wins would bind the
+    # current period's provision alone (L) rather than the combined total (M) every other
+    # figure here - the recalculation's worked example and the composition checks both - is
+    # written over. It has its own meaning below instead, so the build-up (N-1 + N = total)
+    # is itself checked rather than trusted.
+    "cp_provision": ("total provision cp",),
+    "cp_provision_prior": ("provision cp n 1",),
+    "cp_provision_current": ("provision cp n",),
     "employer_charges": ("montant charges patronales", "taux charges patronales"),
     # the RTT leg
     "rtt_earned": ("acquis rtt", "earned rtt days"),

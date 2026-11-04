@@ -6,6 +6,8 @@ what the harness actually produces.
 """
 
 import json
+import re
+import zipfile
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
@@ -61,6 +63,42 @@ def workbook() -> bytes:
     if not path.is_file():
         pytest.skip(f"Sample workbook not present at {path}")
     return path.read_bytes()
+
+
+def _tamper_cell(content: bytes, sheet_name: str, cell: str, value: str) -> bytes:
+    """Rewrite one cell's value inside one worksheet part, leaving every other byte alone.
+
+    A library that re-saves the workbook writes formulas back without their cached values,
+    which turns an edit meant to disagree with the total into a file that reads as
+    inconclusive instead - the same reason skills/scripts/make_discrepancy.py edits the
+    package rather than going through openpyxl.
+    """
+    with zipfile.ZipFile(BytesIO(content)) as package:
+        workbook_xml = package.read("xl/workbook.xml").decode("utf-8")
+        sheet_tag = re.search(
+            rf'<sheet[^>]*name="{re.escape(sheet_name)}"[^>]*r:id="(rId\d+)"', workbook_xml
+        )
+        assert sheet_tag, f"no tab named {sheet_name!r}"
+        rels = package.read("xl/_rels/workbook.xml.rels").decode("utf-8")
+        target = re.search(
+            rf'<Relationship[^>]*Id="{sheet_tag.group(1)}"[^>]*Target="([^"]+)"', rels
+        )
+        assert target
+        part = f"xl/{target.group(1).lstrip('/')}"
+        entries = [(item, package.read(item.filename)) for item in package.infolist()]
+
+    out = BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as writer:
+        for item, payload in entries:
+            if item.filename == part:
+                xml = payload.decode("utf-8")
+                found = re.search(rf'(<c r="{cell}"[^>]*>)(.*?)(</c>)', xml, re.S)
+                assert found, f"{cell} not found on {sheet_name}"
+                opening = re.sub(r'\s+t="[^"]*"', "", found.group(1))
+                xml = xml[: found.start()] + f"{opening}<v>{value}</v></c>" + xml[found.end() :]
+                payload = xml.encode("utf-8")
+            writer.writestr(item, payload)
+    return out.getvalue()
 
 
 @pytest.fixture
@@ -160,7 +198,7 @@ def test_the_score_is_taken_apart_into_areas(api: TestClient, workbook: bytes) -
 
     detail = api.get(f"{REVIEWS}{review_id}/").json()
     areas = detail["areas"]
-    assert len(areas) == 8, "every weighted area is reported, scored or not"
+    assert len(areas) == 6, "every weighted area is reported, scored or not"
     assert sum(area["weight"] for area in areas) == 100
     assert all(0 <= area["score"] <= 100 for area in areas)
     assert detail["needs_person"], "unproven checks are listed for a reviewer"
@@ -181,6 +219,92 @@ def test_the_accrual_reperforms_row_by_row(api: TestClient, workbook: bytes) -> 
     accrual = checks["accrual_reperforms"]
     assert accrual["status"] == "pass"
     assert "2,280 of 2,280 rows agree" in accrual["conclusion"]
+
+
+def test_a_tampered_cp_provision_is_caught_against_the_stated_total(
+    api: TestClient, workbook: bytes
+) -> None:
+    """Editing the CP provision used to leave `fte_split_sums` and `entry_total_recalculates`
+    agreeing with itself, before version 9 moved the entry-level formula onto this same
+    composition (CP provision plus a twelfth of the RTT accrual against the stated total).
+    `accrual_composition_reperforms` re-performs the identical arithmetic as its own check,
+    independent of the entry-level figure, and is asserted on here because it existed first.
+    """
+    tampered = _tamper_cell(workbook, "GPAY", "M9", "500000")
+    review_id = _upload(api, "236264-tampered.xlsx", tampered).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    detail = api.get(f"{REVIEWS}{review_id}/").json()
+    checks = {check["check_id"]: check for area in detail["areas"] for check in area["checks"]}
+    composition = checks["accrual_composition_reperforms"]
+    assert composition["status"] != "pass"
+    assert composition["exception_count"] >= 1
+    assert composition["financial_impact"] is not None
+
+    sample = composition["samples"][0]
+    assert sample["cell"], "the figure must point at a real cell, never just a count"
+    assert sample["expected"] is not None
+    assert sample["actual"] is not None
+    assert sample["difference"] is not None
+    assert Decimal(sample["expected"]) - Decimal(sample["actual"]) == Decimal(sample["difference"])
+
+    # Every row this check did not touch still reconciles, so this is one bad row, not the
+    # whole workbook losing its tie.
+    assert composition["exception_count"] == 1
+
+
+def test_a_tampered_prior_period_cp_provision_is_caught_against_its_own_build_up(
+    api: TestClient, workbook: bytes
+) -> None:
+    """One level further back than the CP provision itself.
+
+    ``accrual_composition_reperforms`` takes the CP provision (M) as given, so editing the
+    prior-period leg it is built from (H) without also re-striking M left every check here
+    agreeing with itself too. ``cp_provision_rebuilds`` is the one that reads H and L directly.
+    """
+    tampered = _tamper_cell(workbook, "GPAY", "H9", "500000")
+    review_id = _upload(api, "236264-tampered.xlsx", tampered).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    detail = api.get(f"{REVIEWS}{review_id}/").json()
+    checks = {check["check_id"]: check for area in detail["areas"] for check in area["checks"]}
+    rebuild = checks["cp_provision_rebuilds"]
+    assert rebuild["status"] != "pass"
+    assert rebuild["exception_count"] == 1
+
+    sample = rebuild["samples"][0]
+    assert sample["cell"]
+    assert Decimal(sample["expected"]) - Decimal(sample["actual"]) == Decimal(sample["difference"])
+
+    # The CP provision edit alone did not touch the total, so the composition check a layer
+    # above this one still reads clean - this is the one case nothing else here would catch.
+    assert checks["accrual_composition_reperforms"]["status"] == "pass"
+
+
+def test_a_tampered_rtt_days_earned_is_caught_against_the_stated_balance(
+    api: TestClient, workbook: bytes
+) -> None:
+    """Another level back: the days actually earned, which the stated RTT balance is built
+    from. Row 8 is used because its "Pris RTT" is not blank - on a row where nothing has been
+    taken the stated balance is zero regardless, so editing the days earned there would not
+    show up, which is a property of the business's own convention rather than a gap here.
+    """
+    tampered = _tamper_cell(workbook, "GPAY", "Q8", "99")
+    review_id = _upload(api, "236264-tampered.xlsx", tampered).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    detail = api.get(f"{REVIEWS}{review_id}/").json()
+    checks = {check["check_id"]: check for area in detail["areas"] for check in area["checks"]}
+    rebuild = checks["rtt_balance_rebuilds"]
+    assert rebuild["status"] != "pass"
+    assert rebuild["exception_count"] == 1
+
+    sample = rebuild["samples"][0]
+    assert sample["cell"]
+    assert Decimal(sample["expected"]) - Decimal(sample["actual"]) == Decimal(sample["difference"])
 
 
 def test_the_recalculation_work_paper_reaches_the_api(api: TestClient, workbook: bytes) -> None:
@@ -448,6 +572,44 @@ def test_the_model_writes_the_report_when_one_is_configured(
     assert detail["next_steps"] == ["Obtain an unredacted or hashed employee reference."]
     # The headline stays code's: the score and the counts are not left to prose.
     assert detail["headline"].startswith(f"{detail['score']} out of 100")
+
+
+# ------------------------------------------------- the evidence appropriateness check, disabled
+
+
+def test_evidence_appropriateness_is_disabled_and_scores_a_demo_pass(
+    stub_client: TestClient, stub_model: StubLLMProvider, workbook: bytes
+) -> None:
+    """AI-E does not run for now: the check is never put to the model (so nothing it might
+    have answered is configured here). `DEMO_EVIDENCE_APPROPRIATENESS_PASS` scores the
+    un-run state as a clean pass rather than the honest `missing_evidence` (zero credit) -
+    a deliberate, temporary demo override; flip that constant off to restore the honest
+    scoring, at which point this test goes back to asserting `missing_evidence` and 0.0.
+    """
+    _agrees_on_the_type(stub_model)
+
+    detail = stub_client.get(f"{REVIEWS}{_finish(stub_client, workbook)}/").json()
+
+    area = next(item for item in detail["areas"] if item["area"] == "evidence_appropriateness")
+    check = next(item for item in area["checks"] if item["check_id"] == "evidence_matches_je_type")
+    assert check["status"] == "pass"
+    assert check["needs_review"] is False
+    assert check["review_reasons"] == []
+    assert area["score"] == 100.0
+
+
+def test_evidence_appropriateness_being_disabled_does_not_stop_anything_else(
+    stub_client: TestClient, stub_model: StubLLMProvider, workbook: bytes
+) -> None:
+    """Unlike the hard gate this replaced, every other area and the recalculation still run."""
+    _agrees_on_the_type(stub_model)
+
+    detail = stub_client.get(f"{REVIEWS}{_finish(stub_client, workbook)}/").json()
+
+    areas = {item["area"] for item in detail["areas"]}
+    assert areas - {"evidence_appropriateness"}, "every other area still ran"
+    assert detail["score"] is not None
+    assert detail["recalculation"] is not None
 
 
 # ------------------------------------------------------------- the type, read twice
@@ -765,7 +927,7 @@ def test_the_plan_is_built_from_the_recipes_and_every_step_survives_checking(
     assert stored is not None
     # Every check the context file states produced an outcome, which is only true if every
     # planned step ran.
-    assert len(stored.checks) == 18
+    assert len(stored.checks) == 24
 
 
 # ---------------------------------------------------------------- what the review cost
@@ -963,7 +1125,7 @@ def test_every_model_call_is_charged_to_the_step_that_made_it(
     assert len(calls) == detail["cost"]["ai_calls"]
     assert all(call["step"] for call in calls), "every call names the step that made it"
     assert all(call["name"] for call in calls), "and what that step was doing"
-    assert {call["step"] for call in calls} <= {"8", "11", "13a", "13b", "14", "15", "18"}
+    assert {call["step"] for call in calls} <= {"8", "11", "12a", "13a", "13b", "14", "15", "18"}
     assert sum(call["total_tokens"] for call in calls) == detail["cost"]["total_tokens"]
     assert sum(Decimal(call["cost_usd"]) for call in calls) == Decimal(detail["cost"]["total_usd"])
 
@@ -1000,7 +1162,7 @@ def test_a_re_read_of_a_stored_review_still_carries_the_register_and_the_cost(
     detail = api.get(f"{REVIEWS}{review_id}/").json()
 
     assert detail["score"] is not None
-    assert len(detail["areas"]) == 8
+    assert len(detail["areas"]) == 6
     assert sum(area["weight"] for area in detail["areas"]) == 100
     assert len(detail["evidence"]) == 6
     assert detail["je_type_name"] == "France vacation accrual"
@@ -1136,3 +1298,220 @@ def test_a_reused_review_answers_with_the_result_it_reused(
 
 def test_a_review_that_is_not_a_reuse_says_so(api: TestClient, workbook: bytes) -> None:
     assert api.get(f"{REVIEWS}{_finish(api, workbook)}/").json()["reused_from"] is None
+
+
+# ----------------------------------------- step 13c: the entry rebuilt from its inputs
+
+
+def test_the_entry_is_rebuilt_from_its_inputs_and_tied_to_the_posting(
+    api: TestClient, workbook: bytes
+) -> None:
+    """The feature's own measure, through the API a browser codes against.
+
+    ``28,672,591.24`` is the debit total of this workbook's posting tab. The rebuild (CP
+    provision plus a twelfth of the RTT accrual, version 9) comes to 28,672,591.21: three
+    cents of per-record rounding dust from dividing the RTT accrual by 12 and rounding to the
+    cent before summing, comfortably inside the entry tolerance (widened from 0.1% to 1% on
+    2026-11-04) and never once outside the 0.01 row tolerance, so nothing is cited for it.
+    """
+    review_id = _upload(api, "236264.xlsx", workbook).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    paper = api.get(f"{REVIEWS}{review_id}/").json()["recalculation"]
+    assert paper is not None, "a workbook that bound its working must be recalculated"
+
+    assert Decimal(paper["recomputed_total"]) == Decimal("28672591.21")
+    assert Decimal(paper["booked"]["total"]) == Decimal("28672591.24")
+    assert Decimal(paper["difference"]) == Decimal("-0.03")
+    assert paper["within_tolerance"] is True
+    assert paper["status"] == "pass"
+    assert paper["rows_total"] == 2_280
+    assert paper["rows_recomputed"] == 2_280
+    assert paper["citations"] == []
+    assert paper["citation_count"] == 0
+
+    basis = paper["basis"]
+    assert basis["sheet"] == "GPAY"
+    assert basis["formula"] == "cp_provision + (rtt_accrual / 12)"
+    assert basis["formula_in_headers"] == "Total Provision\nCP + (RTT Accrual Amount / 12)"
+    assert Decimal(basis["tolerance_pct"]) == Decimal("1")
+    assert basis["provisional_basis"] is True, "the business has not signed the basis off"
+
+    # The booked side is read from the posted entry's own lines, which is what makes the
+    # comparison worth making at all.
+    assert paper["booked"]["method"] == "posting_debits"
+    assert paper["booked"]["accounts"] == ["720008", "720023"]
+
+    # And the leg that can be rebuilt from first principles was, on every row.
+    corroboration = next(item for item in paper["corroborations"] if item["term"] == "rtt_amount")
+    assert corroboration["rows_compared"] == 2_280
+    assert corroboration["agrees"] is True
+
+    # The formula this card used before version 9 - still verified, now a corroborating leg.
+    split = next(item for item in paper["corroborations"] if item["term"] == "fte_split")
+    assert split["rows_compared"] == 2_280
+    assert split["agrees"] is True
+
+
+def test_the_recalculation_reaches_the_score_as_an_ordinary_check(
+    api: TestClient, workbook: bytes
+) -> None:
+    """No special case anywhere downstream: it is a check in an area, with a status."""
+    review_id = _upload(api, "236264.xlsx", workbook).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    detail = api.get(f"{REVIEWS}{review_id}/").json()
+    area = next(item for item in detail["areas"] if item["area"] == "calculation_accuracy")
+    check = next(item for item in area["checks"] if item["check_id"] == "entry_total_recalculates")
+
+    assert check["status"] == "pass"
+    assert check["decided_by"] == "figures"
+    assert check["needs_review"] is False
+    assert check["cells"] or check["conclusion"], "a check with no evidence at all is a gap"
+
+
+def test_the_stream_announces_the_recalculation_before_and_after_it_runs(
+    api: TestClient, workbook: bytes
+) -> None:
+    """A step that takes visible time must be named while it is taking it.
+
+    The started event carries the number of rows about to be walked, so the UI can say what
+    is happening rather than spinning; the finished event carries the comparison.
+    """
+    review_id = _upload(api, "236264.xlsx", workbook).json()["review_id"]
+    payloads = []
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        for line in stream.iter_lines():
+            if line.startswith("data:"):
+                payloads.append(json.loads(line.removeprefix("data:").strip()))
+
+    steps = [payload for payload in payloads if payload["step"] == "13c"]
+    started = next(item for item in steps if item["event"] == SSEEvent.STEP_STARTED)
+    finished = next(item for item in steps if item["event"] == SSEEvent.STEP_FINISHED)
+
+    assert started["detail"]["rows"] > 2_000
+    assert started["progress_pct"] == 80
+
+    assert finished["detail"]["status"] == "pass"
+    assert finished["detail"]["rows_recomputed"] == 2_280
+    assert Decimal(str(finished["detail"]["difference"])) == Decimal("-0.03")
+    assert finished["detail"]["within_tolerance"] is True
+    assert finished["detail"]["formula"] == "Total Provision\nCP + (RTT Accrual Amount / 12)"
+
+
+def test_the_recalculation_survives_a_re_read_of_the_stored_record(
+    api: TestClient, workbook: bytes
+) -> None:
+    """Its arithmetic is the evidence, so it is part of the work product, not working memory."""
+    review_id = _upload(api, "236264.xlsx", workbook).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    live = api.get(f"{REVIEWS}{review_id}/").json()["recalculation"]
+    orchestrator_of(api).forget(review_id)
+    stored = api.get(f"{REVIEWS}{review_id}/").json()["recalculation"]
+
+    assert stored == live
+
+
+def test_the_recalculation_carries_no_employee_identifier(api: TestClient, workbook: bytes) -> None:
+    """It shows amounts against row numbers. This file's names must not leave it."""
+    review_id = _upload(api, "236264.xlsx", workbook).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    body = json.dumps(api.get(f"{REVIEWS}{review_id}/").json()["recalculation"])
+    assert "Confidential" not in body
+    assert "Matricule" not in body
+
+
+def test_a_workbook_that_binds_no_working_gets_no_recalculation(
+    api: TestClient, unreadable_workbook: bytes
+) -> None:
+    """``null`` rather than a work paper of zeros, which would read as an entry worth nothing."""
+    review_id = _upload(api, "notes.xlsx", unreadable_workbook).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    assert api.get(f"{REVIEWS}{review_id}/").json()["recalculation"] is None
+
+
+# ------------------------------------------------------- browsing the recalculation's rows
+
+
+def test_every_row_can_be_paged_through_beyond_the_papers_own_sample(
+    api: TestClient, workbook: bytes
+) -> None:
+    """The work paper itself caps its citations; this is the full set behind it."""
+    review_id = _finish(api, workbook)
+
+    first = api.get(f"{REVIEWS}{review_id}/recalculation/rows/?limit=50").json()
+    assert first["total"] > 50, "a real sample workbook has more than one page of records"
+    assert len(first["rows"]) == 50
+    assert first["next_cursor"] == "50"
+
+    second = api.get(
+        f"{REVIEWS}{review_id}/recalculation/rows/?limit=50&cursor={first['next_cursor']}"
+    ).json()
+    assert {row["row"] for row in first["rows"]}.isdisjoint({row["row"] for row in second["rows"]})
+
+
+def test_the_rows_carry_no_employee_identifier_either(api: TestClient, workbook: bytes) -> None:
+    """The same rule as the work paper beside it: a row number, never a name or a reference."""
+    review_id = _finish(api, workbook)
+
+    body = json.dumps(api.get(f"{REVIEWS}{review_id}/recalculation/rows/?limit=50").json())
+    assert "Confidential" not in body
+    assert "Matricule" not in body
+
+
+def test_rows_can_be_filtered_to_only_the_ones_that_changed(
+    api: TestClient, workbook: bytes
+) -> None:
+    review_id = _finish(api, workbook)
+
+    changed = api.get(f"{REVIEWS}{review_id}/recalculation/rows/?status=changed&limit=200").json()
+    assert all(row["kind"] is not None for row in changed["rows"])
+
+    agrees = api.get(f"{REVIEWS}{review_id}/recalculation/rows/?status=agrees&limit=200").json()
+    assert all(row["kind"] is None for row in agrees["rows"])
+
+
+def test_rows_can_be_sorted_worst_first(api: TestClient, workbook: bytes) -> None:
+    review_id = _finish(api, workbook)
+
+    page = api.get(
+        f"{REVIEWS}{review_id}/recalculation/rows/?sort=-difference&limit=20"
+    ).json()
+    magnitudes = [abs(Decimal(row["difference"])) for row in page["rows"] if row["difference"]]
+    assert magnitudes == sorted(magnitudes, reverse=True)
+
+
+def test_rows_can_be_rolled_up_by_cost_centre(api: TestClient, workbook: bytes) -> None:
+    review_id = _finish(api, workbook)
+
+    groups = api.get(f"{REVIEWS}{review_id}/recalculation/groups/?group_by=cost_center").json()
+    assert groups, "the sample workbook carries a cost centre on its calculation tab"
+    assert sum(group["rows"] for group in groups) > 0
+    for group in groups:
+        assert group["difference"] == str(
+            Decimal(group["recomputed_total"]) - Decimal(group["stated_total"])
+        )
+
+
+def test_browsing_a_review_with_no_recalculation_is_a_404(
+    api: TestClient, unreadable_workbook: bytes
+) -> None:
+    review_id = _upload(api, "notes.xlsx", unreadable_workbook).json()["review_id"]
+    with api.stream("GET", f"{REVIEWS}{review_id}/events/") as stream:
+        list(stream.iter_lines())
+
+    response = api.get(f"{REVIEWS}{review_id}/recalculation/rows/")
+    assert response.status_code == 404
+
+
+def test_browsing_an_unknown_review_is_also_a_404(api: TestClient) -> None:
+    response = api.get(f"{REVIEWS}unknown-review-id/recalculation/rows/")
+    assert response.status_code == 404
