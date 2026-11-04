@@ -7,9 +7,10 @@ something that can be evaluated two million times without surprises.
 Three decisions hold it together.
 
 **It is parsed, never evaluated as Python.** No ``eval``, no ``exec``, no name lookup into
-anything but the row's own inputs. The grammar is four operators, five functions, numeric
-literals and parentheses, and a formula that uses anything else fails to load - at startup,
-naming the JE type file, rather than halfway through somebody's review.
+anything but the row's own inputs. The grammar is four arithmetic operators, six
+comparisons, six functions, numeric literals and parentheses, and a formula that uses
+anything else fails to load - at startup, naming the JE type file, rather than halfway
+through somebody's review.
 
 **A missing input propagates.** Every operand is ``Decimal | None`` and anything touching a
 ``None`` is ``None``. A row an input does not resolve on therefore produces no amount at all,
@@ -24,8 +25,9 @@ AST with a type test at every node. On a 37,613-row working that is the differen
 a work paper and a timeout.
 """
 
+import operator
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from decimal import Decimal, DivisionByZero, InvalidOperation
 from functools import lru_cache
 from typing import Final
@@ -50,11 +52,33 @@ _TOKENS: Final = re.compile(
     \s*(?:
         (?P<number>\d+(?:\.\d+)?)
       | (?P<name>[A-Za-z_][A-Za-z0-9_]*)
-      | (?P<op>[+\-*/(),])
+      | (?P<op>==|!=|<=|>=|[+\-*/(),<>])
     )
     """,
     re.VERBOSE,
 )
+"""Two-character comparisons are listed before the single-character class on purpose: the
+alternation is ordered, so ``<=`` would otherwise be read as ``<`` followed by ``=``."""
+
+_TRUE: Final = Decimal(1)
+_FALSE: Final = Decimal(0)
+
+_COMPARISONS: Final[dict[str, Callable[[Decimal, Decimal], bool]]] = {
+    "==": operator.eq,
+    "!=": operator.ne,
+    "<": operator.lt,
+    "<=": operator.le,
+    ">": operator.gt,
+    ">=": operator.ge,
+}
+"""The comparisons a condition may be written with, answering 1 or 0.
+
+All six rather than only the one a JE type happens to need today: a business that can write
+``!=`` but not ``>`` would send the next rule back through a code change, and partial
+comparison support is the kind of gap nobody discovers until they hit it. They bind looser
+than ``+``, and exactly one is allowed per expression - ``a < b < c`` is a parse error
+rather than a guess at which of the two readings the business meant.
+"""
 
 _FUNCTIONS: Final[dict[str, tuple[int, int]]] = {
     "max": (2, 8),
@@ -62,6 +86,7 @@ _FUNCTIONS: Final[dict[str, tuple[int, int]]] = {
     "abs": (1, 1),
     "round": (2, 2),
     "coalesce": (2, 2),
+    "if": (3, 3),
 }
 """The only functions a formula may call, with how many arguments each takes.
 
@@ -73,8 +98,16 @@ the periods that leg does not apply, and the business's own stated total simply 
 rather than reading as incomplete - so folding that blank to zero here is reproducing what
 the business already does, not assuming it. It is written explicitly in the business's own
 expression for that reason: the alternative, this behaviour hidden inside the engine for
-every formula, is the thing ``None`` propagating everywhere else exists to prevent. Anything
-beyond these five belongs in the JE type's rules, not in an expression nobody can test.
+every formula, is the thing ``None`` propagating everywhere else exists to prevent.
+
+``if(condition, then, otherwise)`` is here because a real convention turned out not to be
+expressible without it: the RTT leg of the French vacation accrual is nil for an employee
+who has taken none of it, and nothing built from the four operators reproduces that. The
+nearest arithmetic stand-in, scaling the leg by ``min(days_taken, 1)``, is right only while
+nobody takes a half day - it was wrong on three records across the two real workbooks. The
+untaken branch is not evaluated, so an input only one branch reads cannot make the other
+branch's rows incomplete. Anything beyond these six belongs in the JE type's rules, not in
+an expression nobody can test.
 """
 
 
@@ -134,6 +167,30 @@ def substitute(text: str, labels: Mapping[str, str]) -> str:
     return re.sub(r"[A-Za-z_][A-Za-z0-9_]*", swap, text).strip()
 
 
+def expand(text: str, stages: Sequence[tuple[str, str]], labels: Mapping[str, str]) -> str:
+    """The formula with every derived stage written out, down to the columns themselves.
+
+    ``substitute`` alone leaves a staged formula half-named: a stage has no column, so it
+    keeps the id or the label the business gave it, and a reader is told the entry is
+    "CP provision plus the rebuilt RTT accrual" without being told which columns the rebuilt
+    figure comes from. This writes the whole thing out in the preparer's own headers, so the
+    columns the arithmetic actually reads are on the page and change with the workbook.
+
+    ``stages`` are ``(id, expression)`` in declaration order, which is what makes one pass
+    enough: a stage may only read inputs and stages declared before it, so by the time one
+    is reached every stage it names has already been written out.
+
+    Each stage is wrapped in parentheses as it goes in. Inlining ``a + b`` into ``x + s / 12``
+    unparenthesised would silently produce ``x + a + b / 12``, which is a different sum - the
+    displayed formula would no longer be the one that was evaluated, which is worse than a
+    formula nobody can read.
+    """
+    resolved: dict[str, str] = {}
+    for stage_id, expression in stages:
+        resolved[stage_id] = f"({substitute(expression, {**labels, **resolved})})"
+    return substitute(text, {**labels, **resolved})
+
+
 # --------------------------------------------------------------------------- parsing
 
 
@@ -156,19 +213,33 @@ class _Parser:
         return term
 
     def _expression(self) -> Term:
+        """The loosest level: one optional comparison over two arithmetic expressions.
+
+        Deliberately not a loop. A chained ``a < b < c`` has two defensible readings and no
+        business has asked for either, so it is left as an unconsumed token and reported as
+        a parse error at startup.
+        """
+        left = self._sum()
+        symbol = self._peek()
+        if symbol in _COMPARISONS:
+            self._take()
+            return _compare(symbol, left, self._sum())
+        return left
+
+    def _sum(self) -> Term:
         left = self._product()
         while self._peek() in {"+", "-"}:
-            operator = self._take()
+            sign = self._take()
             right = self._product()
-            left = _add(left, right) if operator == "+" else _subtract(left, right)
+            left = _add(left, right) if sign == "+" else _subtract(left, right)
         return left
 
     def _product(self) -> Term:
         left = self._unary()
         while self._peek() in {"*", "/"}:
-            operator = self._take()
+            sign = self._take()
             right = self._unary()
-            left = _multiply(left, right) if operator == "*" else _divide(left, right)
+            left = _multiply(left, right) if sign == "*" else _divide(left, right)
         return left
 
     def _unary(self) -> Term:
@@ -317,6 +388,43 @@ def _divide(left: Term, right: Term) -> Term:
     return term
 
 
+def _compare(symbol: str, left: Term, right: Term) -> Term:
+    """One comparison, answering 1 or 0 so a condition composes like any other term.
+
+    ``None`` on either side is ``None``, like every other operator here: a row an input does
+    not resolve on has no answer to the question, which is not the same as the answer being
+    no. Reading an absent value as a failed test is how a missing column turns into a
+    confident finding about every record.
+    """
+    test = _COMPARISONS[symbol]
+
+    def term(row: Row) -> Decimal | None:
+        first, second = left(row), right(row)
+        if first is None or second is None:
+            return None
+        return _TRUE if test(first, second) else _FALSE
+
+    return term
+
+
+def _conditional(args: list[Term]) -> Term:
+    """``if(condition, then, otherwise)``, evaluating only the branch it takes.
+
+    Laziness is the point rather than an optimisation: the branch not taken may read an
+    input this row does not carry, and evaluating it would make the row incomplete over a
+    figure the business never asked for on it.
+    """
+    condition, when_true, when_false = args
+
+    def term(row: Row) -> Decimal | None:
+        answer = condition(row)
+        if answer is None:
+            return None
+        return when_true(row) if answer else when_false(row)
+
+    return term
+
+
 def _negate(inner: Term) -> Term:
     def term(row: Row) -> Decimal | None:
         value = inner(row)
@@ -390,7 +498,16 @@ _CALLS: Final[dict[str, Callable[[list[Term]], Term]]] = {
     "coalesce": _coalesce,
     "abs": _absolute,
     "round": _rounded,
+    "if": _conditional,
 }
 
 
-__all__ = ["CompiledFormula", "FormulaError", "Row", "Term", "compile_formula", "substitute"]
+__all__ = [
+    "CompiledFormula",
+    "FormulaError",
+    "Row",
+    "Term",
+    "compile_formula",
+    "expand",
+    "substitute",
+]

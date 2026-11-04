@@ -229,6 +229,14 @@ class DerivedTermSpec(_Frozen):
 
     id: str = Field(..., min_length=1)
     expression: str = Field(..., min_length=1, description="Over inputs and earlier terms")
+    label: str = Field(
+        default="",
+        description=(
+            "A short name for the stage, as a reader should see it. Kept apart from "
+            "``description`` because the work paper needs both a column heading and a "
+            "sentence, and a sentence in a column heading is neither."
+        ),
+    )
     unit: RecalcUnit = Field(default=RecalcUnit.CURRENCY)
     agrees_with: str | None = Field(
         default=None, description="A column meaning holding the workbook's own answer for it"
@@ -421,6 +429,20 @@ class RowIdentitySpec(_Frozen):
             "where every row is wrong, and a confident false finding is the worse outcome."
         ),
     )
+    against_blank_is_zero: bool = Field(
+        default=False,
+        description=(
+            "Whether a blank in the compared column means nil rather than unknown. Off by "
+            "default, because a blank is normally a figure the workbook does not state and "
+            "reading it as a zero would invent an answer. Turn it on only where a blank has "
+            "been verified against real data to be the business's own way of writing nil - "
+            "a provision column left empty for an employee the provision does not apply to. "
+            "The reason it matters: a skipped row is an uncovered row, and an identity that "
+            "cannot cover the population can never support a pass, so a column the preparer "
+            "legitimately leaves empty would otherwise make the check permanently partial on "
+            "a workbook with nothing wrong with it."
+        ),
+    )
 
 
 class ReperformanceSpec(_Frozen):
@@ -531,6 +553,40 @@ class JETypeContext(_Frozen):
                 raise ValueError(
                     f"identity {identity.id!r} compares against {identity.against!r}, which "
                     f"{self.reperformance.table!r} does not declare"
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _recalculation_reads_columns_this_type_declares(self) -> "JETypeContext":
+        """Every meaning the approved formula reads or compares against must be declared.
+
+        The sibling of the identity check above, and it exists for a sharper reason. An
+        input naming a column this type never declares makes the recalculation inconclusive,
+        which is loud. A derived term whose ``agrees_with`` is misspelled is silent: the
+        engine looks the meaning up in the bound table, finds nothing, and simply records no
+        corroboration - so the strongest evidence the work paper carries would quietly not
+        be there, and the paper would look exactly as it does when the leg genuinely ties.
+        """
+        spec = self.recalculation
+        if spec is None:
+            return self
+        table = self.tables.get(spec.table)
+        if table is None:
+            raise ValueError(
+                f"recalculation reads table {spec.table!r}, which {self.id!r} does not declare"
+            )
+        meanings = frozenset(table.meanings)
+        wanted = {
+            f"record_key {spec.record_key!r}": spec.record_key,
+            f"stated {spec.stated!r}": spec.stated,
+            **{f"input {item.id!r}": item.meaning for item in spec.inputs},
+            **{f"term {term.id!r} agrees_with": term.agrees_with for term in spec.derive},
+        }
+        for what, meaning in wanted.items():
+            if meaning and meaning not in meanings:
+                raise ValueError(
+                    f"recalculation {what} names {meaning!r}, which table "
+                    f"{spec.table!r} of {self.id!r} does not declare"
                 )
         return self
 

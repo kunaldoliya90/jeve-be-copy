@@ -9,7 +9,7 @@ from decimal import Decimal
 
 import pytest
 
-from review.recalc.formula import FormulaError, compile_formula, substitute
+from review.recalc.formula import FormulaError, compile_formula, expand, substitute
 
 
 def evaluate(expression: str, **values: Decimal | None) -> Decimal | None:
@@ -95,6 +95,82 @@ def test_coalesce_is_the_one_deliberate_exception() -> None:
     assert evaluate("coalesce(a, b)", a=None, b=None) is None
 
 
+# ------------------------------------------------------------- conditions and branches
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        ("a == b", Decimal(0)),
+        ("a != b", Decimal(1)),
+        ("a < b", Decimal(1)),
+        ("a <= b", Decimal(1)),
+        ("a > b", Decimal(0)),
+        ("a >= b", Decimal(0)),
+    ],
+)
+def test_a_comparison_answers_one_or_zero(expression: str, expected: Decimal) -> None:
+    """Answering a number rather than a bool keeps a condition composable with the rest."""
+    assert evaluate(expression, a=Decimal(10), b=Decimal(20)) == expected
+
+
+def test_a_comparison_binds_looser_than_arithmetic() -> None:
+    assert evaluate("a + b == 30", a=Decimal(10), b=Decimal(20)) == Decimal(1)
+
+
+def test_a_comparison_with_an_absent_side_has_no_answer() -> None:
+    """Not false. An absent value answers neither yes nor no, and reading it as a failed
+    test is how one missing column becomes a confident finding about every record."""
+    assert evaluate("a == b", a=None, b=Decimal(1)) is None
+    assert evaluate("a > b", a=Decimal(1), b=None) is None
+
+
+def test_the_conditional_takes_exactly_one_branch() -> None:
+    assert evaluate("if(a == 0, 100, 200)", a=Decimal(0)) == Decimal(100)
+    assert evaluate("if(a == 0, 100, 200)", a=Decimal(1)) == Decimal(200)
+
+
+def test_the_conditional_does_not_evaluate_the_branch_it_does_not_take() -> None:
+    """The point of the laziness. The branch not taken may read an input this row does not
+    carry, and evaluating it anyway would make the row incomplete over a figure the business
+    never asked for on it."""
+    assert evaluate("if(a == 0, 0, b / a)", a=Decimal(0), b=None) == Decimal(0)
+    assert evaluate("if(a == 0, b, 0)", a=Decimal(1), b=None) == Decimal(0)
+
+
+def test_a_condition_with_no_answer_produces_no_amount() -> None:
+    assert evaluate("if(a == 0, 1, 2)", a=None) is None
+
+
+@pytest.mark.parametrize(
+    ("taken", "expected"),
+    [
+        (None, Decimal(0)),
+        (Decimal(1), Decimal("5.6667")),
+        # The case that rules out the arithmetic stand-in. Scaling the leg by
+        # min(taken, 1) halves a half day; three records across the two real workbooks do
+        # exactly this, which is why the grammar grew a conditional rather than a trick.
+        (Decimal("0.5"), Decimal("6.1667")),
+        # Taken more than earned: floored, never negative.
+        (Decimal(9), Decimal(0)),
+    ],
+)
+def test_the_leave_convention_the_conditional_exists_for(
+    taken: Decimal | None, expected: Decimal
+) -> None:
+    """An employee who has taken no RTT accrues none of it, which nothing in the four
+    operators reproduces. Written as the business states it, over a blank that means none
+    were taken rather than that the figure is unknown."""
+    assert (
+        evaluate(
+            "if(coalesce(taken, 0) == 0, 0, max(earned - taken, 0))",
+            earned=Decimal("6.6667"),
+            taken=taken,
+        )
+        == expected
+    )
+
+
 # ------------------------------------------------------------------------- the refusals
 
 
@@ -119,6 +195,16 @@ def test_coalesce_is_the_one_deliberate_exception() -> None:
         "round(a, 2, 3)",
         "coalesce(a)",
         "coalesce(a, b, c)",
+        "if(a, b)",
+        "if(a, b, c, d)",
+        # A chained comparison has two defensible readings, so it is refused rather than
+        # guessed at.
+        "a < b < c",
+        # Excel's single `=` and a mistyped operator are both typos, not dialects.
+        "a = b",
+        "a === b",
+        "a =< b",
+        "a <> b",
     ],
 )
 def test_anything_outside_the_grammar_fails_to_load(expression: str) -> None:
@@ -158,3 +244,66 @@ def test_substitution_leaves_a_name_it_has_no_header_for() -> None:
 def test_substitution_never_renames_a_function() -> None:
     """``max`` is arithmetic, whatever a business file happens to call one of its inputs."""
     assert substitute("max(a, 0)", {"max": "nonsense", "a": "Days"}) == "max(Days, 0)"
+
+
+# ---------------------------------------------------- writing the stages out in full
+
+
+STAGES = [
+    ("earned", "coalesce(entitlement, 0) / 12 * months"),
+    ("unused", "max(earned - taken, 0)"),
+    ("amount", "unused * rate"),
+]
+HEADERS = {
+    "entitlement": "Acquis RTT",
+    "months": "Months to Accrue",
+    "taken": "Pris RTT",
+    "rate": "Daily Salary (RTT Rate)",
+    "provision": "Total Provision CP",
+}
+
+
+def test_expansion_writes_every_stage_out_in_the_preparers_columns() -> None:
+    """The point of it: a stage has no column, so a formula naming one hides the columns
+    behind it. After expansion every name on the page is a header off this workbook."""
+    written = expand("provision + amount / 12", STAGES, HEADERS)
+
+    assert written == (
+        "Total Provision CP + "
+        "((max((coalesce(Acquis RTT, 0) / 12 * Months to Accrue) - Pris RTT, 0)) "
+        "* Daily Salary (RTT Rate)) / 12"
+    )
+    for name, _ in STAGES:
+        assert name not in written
+    for declared in ("entitlement", "months", "taken", "rate", "provision"):
+        assert declared not in written
+
+
+def test_each_stage_is_parenthesised_as_it_goes_in() -> None:
+    """Inlining a sum unparenthesised would silently change the arithmetic: ``x + a + b / 12``
+    is not ``x + (a + b) / 12``, and a displayed formula that is not the evaluated one is
+    worse than one nobody can read."""
+    assert expand("x + s / 12", [("s", "a + b")], {}) == "x + (a + b) / 12"
+
+
+def test_a_stage_may_read_an_earlier_stage() -> None:
+    """Declaration order is evaluation order, which is what makes one pass enough."""
+    assert (
+        expand("c", [("a", "1 + 1"), ("b", "a * 2"), ("c", "b + 3")], {}) == "(((1 + 1) * 2) + 3)"
+    )
+
+
+def test_expansion_leaves_a_name_it_has_no_header_for() -> None:
+    """A workbook that binds nothing still shows the formula, in the ids the business wrote,
+    rather than a blank where the arithmetic should be."""
+    assert expand("provision + amount", [("amount", "unused * rate")], {}) == (
+        "provision + (unused * rate)"
+    )
+
+
+def test_expansion_never_renames_a_function() -> None:
+    assert expand("max(a, b)", [], {"max": "NOPE", "a": "A", "b": "B"}) == "max(A, B)"
+
+
+def test_expansion_with_no_stages_is_a_plain_substitution() -> None:
+    assert expand("provision + 1", [], HEADERS) == substitute("provision + 1", HEADERS)

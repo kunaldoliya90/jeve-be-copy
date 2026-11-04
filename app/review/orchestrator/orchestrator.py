@@ -1182,8 +1182,8 @@ class ReviewOrchestrator:
         paper = run.recalculation
         current_total: Decimal | None = None
         if paper is not None:
-            current_total = paper.booked.total if paper.booked.total is not None else (
-                paper.recomputed_total
+            current_total = (
+                paper.booked.total if paper.booked.total is not None else (paper.recomputed_total)
             )
 
         loop = asyncio.get_running_loop()

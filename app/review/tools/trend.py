@@ -65,9 +65,7 @@ def run_trend_check(
     tool = TrendCheckTool()
     if current_total is None:
         return [
-            tool.unable(
-                check_id, "the entry's posted amount could not be established", dict(args)
-            )
+            tool.unable(check_id, "the entry's posted amount could not be established", dict(args))
         ]
     if not baseline.amounts:
         return [

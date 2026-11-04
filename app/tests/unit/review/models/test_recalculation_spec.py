@@ -131,6 +131,81 @@ def test_an_entry_type_without_a_basis_is_allowed() -> None:
     assert JETypeContext.model_fields["recalculation"].default is None
 
 
+# ------------------------------------ the meanings, against the type's own tables
+
+
+def je_type(basis: RecalculationSpec, meanings: tuple[str, ...]) -> JETypeContext:
+    """A minimal type carrying one working table, so the cross-check has something to read."""
+    return JETypeContext.model_validate(
+        {
+            "id": "t",
+            "name": "T",
+            "version": 1,
+            "objective": "o",
+            "areas": {"accrual": {"weight": 100, "method": "weakest_check"}},
+            "checks": [
+                {
+                    "id": "c",
+                    "area": "accrual",
+                    "question": "Does it re-perform?",
+                    "decided_by": "figures",
+                    "recipe": {"tool": "recalc_entry_total", "args": {}},
+                }
+            ],
+            "tables": {"calculation": {"required": True, "meanings": list(meanings)}},
+            "recalculation": basis,
+        }
+    )
+
+
+DECLARED = ("employee_ref", "fte_accrual", "non_fte_accrual", "total_accrual")
+
+
+def test_a_recalculation_over_declared_meanings_loads() -> None:
+    assert (
+        je_type(spec(record_key="employee_ref", stated="total_accrual"), DECLARED).recalculation
+        is not None
+    )
+
+
+def test_an_input_naming_a_meaning_the_working_does_not_declare_is_a_startup_error() -> None:
+    with pytest.raises(ValidationError, match="rtt_accrual"):
+        je_type(
+            spec(
+                record_key="employee_ref",
+                stated="total_accrual",
+                inputs=(
+                    RecalcInputSpec(id="a", meaning="fte_accrual"),
+                    RecalcInputSpec(id="b", meaning="rtt_accrual"),
+                ),
+            ),
+            DECLARED,
+        )
+
+
+def test_a_corroboration_against_an_undeclared_meaning_is_a_startup_error() -> None:
+    """The silent one, and the reason this validator exists. The engine looks ``agrees_with``
+    up in the bound table and simply records no corroboration when it finds nothing - so a
+    misspelling would remove the strongest evidence on the work paper while leaving the paper
+    looking exactly as it does when the leg genuinely ties."""
+    with pytest.raises(ValidationError, match="rtt_balanec_days"):
+        je_type(
+            spec(
+                record_key="employee_ref",
+                stated="total_accrual",
+                derive=(
+                    DerivedTermSpec(id="t", expression="a + b", agrees_with="rtt_balanec_days"),
+                ),
+            ),
+            DECLARED,
+        )
+
+
+def test_a_recalculation_reading_a_table_the_type_never_declares_is_a_startup_error() -> None:
+    with pytest.raises(ValidationError, match="working"):
+        je_type(spec(table="working", record_key="employee_ref"), DECLARED)
+
+
 def test_the_booked_side_is_a_table_and_a_column_not_a_cell() -> None:
     booked = BookedSpec(table="je_staging", amount="line_amount")
 

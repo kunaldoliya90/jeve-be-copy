@@ -36,9 +36,7 @@ class EvidenceAppropriatenessTool(BaseTool):
         # The orchestrator always splits this check out of the plan and calls
         # `figures_for_evidence_appropriateness` directly, before anything else runs.
         # Reaching this is a wiring defect, not a workbook one.
-        return [
-            self.unable(check_id, "evidence appropriateness did not run as its own gated step")
-        ]
+        return [self.unable(check_id, "evidence appropriateness did not run as its own gated step")]
 
 
 def figures_for_evidence_appropriateness(
@@ -58,9 +56,9 @@ def figures_for_evidence_appropriateness(
             tool.unable(check_id, "evidence appropriateness is not currently checked", dict(args))
         ]
 
-    samples = [
-        {"kind": "mismatch", **mismatch} for mismatch in verdict.mismatched
-    ] + [{"kind": "citation", **citation} for citation in verdict.citations]
+    samples = [{"kind": "mismatch", **mismatch} for mismatch in verdict.mismatched] + [
+        {"kind": "citation", **citation} for citation in verdict.citations
+    ]
 
     return [
         tool.figure(

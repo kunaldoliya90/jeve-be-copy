@@ -35,6 +35,8 @@ logger = logging.getLogger(__name__)
 
 TOOL_NAME = "reperform"
 
+_ZERO = Decimal(0)
+
 
 class _RowDiff(NamedTuple):
     row: int
@@ -140,6 +142,10 @@ class ReperformTool(BaseTool):
                 values[meaning] = bound.number(row, meaning)
             expected = compiled.evaluate(values)
             actual = bound.number(row, identity.against)
+            if actual is None and identity.against_blank_is_zero:
+                # The business declares that a blank in this column means nil. Only ever
+                # where that has been verified against real data - see the field's own note.
+                actual = _ZERO
             if expected is None or actual is None:
                 continue
             checked += 1

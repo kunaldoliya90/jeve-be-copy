@@ -138,11 +138,13 @@ app/
                         MethodologyCache, PictureCache; idle-TTL, thread-safe, keys
                         length-prefixed
       business_rules.yaml   credits, needs_review_cap, bands, tolerance, trend, pii
-      je_types/vacation_accrual_france.yaml   v6. 8 areas, 22 checks (19 by figures),
-                        discriminators, methodology, reperformance (the record-level
-                        identities), recalculation (the approved formula and its inputs),
-                        accounts, population, evidence. tables[].meanings is what the checks
-                        actually read, and it is enforced against the arithmetic now
+      je_types/vacation_accrual_france.yaml   v11. 6 areas, 30 checks, discriminators,
+                        methodology, reperformance (12 record-level identities: six over the
+                        columns the entry is built from, six over the rest of the row),
+                        recalculation (the approved formula, its inputs and the stages it is
+                        built from), accounts, population, evidence. tables[].meanings is what
+                        the checks actually read, and it is enforced against both the
+                        identities and the recalculation now
       prompts/          AI-1,2,3,4,5,R,M,X
     agents/           every model call. None of them can change a number
       projections.py    the AI boundary, enforced in code: no workbook, no employee data
@@ -164,12 +166,21 @@ app/
                         looked" and "looked and could not read it" differently
     recalc/             step 13c: the entry rebuilt from the inputs the business approved
       formula.py        the approved formula, parsed (never eval'd) into closures and cached:
-                        four operators, max/min/abs/round/coalesce, literals, parentheses. A
-                        missing input propagates as None, so a row an input does not resolve on
-                        is incomplete rather than recomputed as a zero - coalesce(value,
-                        default) is the one deliberate exception, verified against real data
-                        for a blank that is itself the business's answer. substitute() rewrites
-                        an expression in the preparer's own column headers
+                        four arithmetic operators, six comparisons, max/min/abs/round/coalesce/
+                        if, literals, parentheses. A missing input propagates as None, so a row
+                        an input does not resolve on is incomplete rather than recomputed as a
+                        zero - coalesce(value, default) is the one deliberate exception,
+                        verified against real data for a blank that is itself the business's
+                        answer, and a comparison with an absent side is None rather than false.
+                        if(cond, then, otherwise) evaluates only the branch it takes, so an
+                        input one branch reads cannot make the other branch's rows incomplete.
+                        A chained comparison is a parse error, not a guess. substitute()
+                        rewrites an expression in the names a reader sees: an input by the
+                        header the preparer wrote, a derived term by the short label the
+                        business gave the stage, since a stage has no column to be named by.
+                        expand() goes further and writes every stage out down to the columns
+                        themselves, parenthesising each as it goes in, because that is the
+                        only form that tells a reader which columns the arithmetic reads
       formula_audit.py  the second half of step 13c: the formulas the *workbook* applies,
                         read and never evaluated. Per column the business declares arithmetic
                         for: not calculated at all, cells that disagree with each other, a
@@ -296,7 +307,11 @@ app/
                         DerivedTermSpec, BookedSpec, RoundingSpec, CurrencySpec) and the
                         record-level identities (ReperformanceSpec, RowIdentitySpec) whose
                         formulas are compiled in a validator, so a malformed one fails at
-                        startup naming the field. extra="forbid" so a YAML typo is a startup
+                        startup naming the field. Two validators also cross-check every
+                        meaning the identities and the recalculation name against the table
+                        that type declares - the recalculation's because a misspelled
+                        agrees_with is otherwise silent: the engine finds no column and simply
+                        records no corroboration. extra="forbid" so a YAML typo is a startup
                         error, not a rule that does nothing
   tests/
     conftest.py         autouse isolated_environment (drops FLAVOUR/APP_* env, chdir to
@@ -419,6 +434,47 @@ These are the user's choices. They override the guidelines; do not flag them in 
   validator, so a malformed formula or a typo in an input name is a startup error naming the
   field rather than a term that silently evaluates to nothing on every row. A JE type that
   states no formula reports the recalculation as not run; nothing assumes one.
+- The formula **reads source columns, not the stated figures they produce** (v11). Which
+  level it reads at is the whole design question, and the answer is: as far back as the
+  columns go. A formula over two stated columns asking whether they add up to a third is a
+  tie-out - the inputs behind them were examined, but by other checks with their own
+  statuses, so an edited source column left the headline figure reconciling to the cent. The
+  formula now rebuilds its RTT leg from the entitlement, the months worked, the days taken
+  and the daily rate, and every intermediate carries an `agrees_with` naming the column the
+  workbook states its own answer for that quantity in. So an edited *stated* column is still
+  caught - as a corroboration that no longer agrees, which drops the check to partial and
+  sends it to a person - and an edited *source* column now moves the entry's own number. The
+  one thing lost is that a stated column is no longer decisive; that is the trade the
+  business asked for.
+  This is also what gave `rtt_earned_days` (the workbook's own prorated earned-days column)
+  its first reader. It had been aliased to the same meaning as the yearly entitlement since
+  the alias table was written, so first-match-wins stood one meaning in for two different
+  quantities - the third instance of that defect, after `cp_provision` and `rtt_balance`.
+- The formula grammar has a **conditional**, and it is there because a real convention needed
+  one: an employee who has taken no RTT accrues none of it. Nothing in four operators
+  reproduces that. The arithmetic stand-in - scaling the leg by `min(days_taken, 1)` - was
+  written, measured and rejected: it is correct only while nobody takes a half day, and three
+  records across the two real workbooks do, which is a false exception on a clean file. A
+  comparison with an absent side answers `None` rather than false, for the same reason every
+  other operator propagates: reading a blank as a failed test turns one missing column into a
+  confident finding about every record.
+- **Every numeric column on a record is covered by something.** Six identities cover the
+  columns the posted figure is built from; six more cover the rest of the row - the employer
+  charge rate and amount, the two provision totals that include those charges, the RTT
+  provision stated in money, and the prior period's leave balance. None of that second set
+  reaches the entry, because it excludes employer social charges, and they exist anyway: an
+  edit to a column nothing reads is still an edit to the working, and that is what an
+  undetected manipulation looks like. One check each, never grouped, because a figures-decided
+  status comes from the *decisive* figure and a reperform figure is not decisive - grouped,
+  only the first identity in the list could ever report a failure rather than partial.
+- `RowIdentitySpec.against_blank_is_zero` is **off by default and has to be earned**. A blank
+  in a compared column is normally a figure the workbook does not state, and reading it as a
+  nought invents an answer. But `reperform` skips a blank one, a skipped row is an uncovered
+  row, and an identity that cannot cover the population can never support a pass - so a column
+  the preparer legitimately leaves empty makes a check permanently partial on a workbook with
+  nothing wrong with it. Turning it on is allowed only where the blank has been verified
+  against real data to be the business's own way of writing nil, which for these six means
+  every blank coincides with a computed nil on both French periods.
 - The **record-level arithmetic is declared too** (`reperformance.identities`, version 4).
   One `reperform` tool evaluates any of them, and it replaced three tools whose arithmetic
   was Python. The reason is not that the code was wrong: a business owner could read their
@@ -528,16 +584,18 @@ These are the user's choices. They override the guidelines; do not flag them in 
   from, so summing 6,465 of them leaves a tail around 1e-8; reporting that as
   "0.0000000248 more than was posted" puts a difference a reviewer cannot act on where a real
   one belongs. Sub-cent materiality is what `row_tolerance` is for.
-- The formula declared for vacation accrual is the entry's **composition**, not the payroll
-  calculation: each employee's FTE and non-FTE accrual summed, against the posting tab's
-  debit total. Measured against the three real workbooks before it was written - on both
-  French periods the CP provision arrives already calculated from the payroll extract and is
-  reproducible from the columns present on 4% of rows, so a formula that tried to rebuild it
-  would report thousands of exceptions that are not there. The leg that *can* be rebuilt is,
-  as a derived term: remaining RTT days times the daily rate reproduces the workbook's own
-  RTT accrual on every one of 2,273 and 2,280 records. `provisional_basis: true` until the
-  business signs the formula and the +/-0.1% tolerance off, and the work paper says so on its
-  face.
+- The formula declared for vacation accrual rebuilds **the leg that can be rebuilt and reads
+  the leg that cannot**, which is where the line sits and why it sits there. The RTT leg is
+  rebuilt from first principles - yearly entitlement, months worked, days taken, daily rate -
+  because that reproduces the workbook's own figure on every one of 2,273 and 2,280 records.
+  The CP provision is read as a column, because it arrives already calculated from the payroll
+  extract and is reproducible from the legs present on only 4% of rows: a formula that tried
+  to rebuild it would report thousands of exceptions that are not there. That asymmetry was
+  measured against the real workbooks, not assumed, and it is the reason `cp_provision` is an
+  input while the RTT accrual is a stage. The CP provision is still rebuilt where it can be -
+  by `cp_provision_rebuilds`, which reports the 4% rather than deciding the entry on it.
+  `provisional_basis: true` until the business signs the formula and the +/-1% tolerance off,
+  and the work paper says so on its face.
 - `entry_total_recalculates` overlaps `fte_split_aggregates` deliberately. One asks whether
   each row's split sums to its own stated total; the other asks whether the entry can be
   produced again at all and whether what was produced is what was booked. The first can hold
@@ -716,6 +774,127 @@ These are the user's choices. They override the guidelines; do not flag them in 
 ## Log
 
 Newest first, one line per change. Add a line with every change.
+
+- 2026-11-04 (9): the recalculation card names the columns it reads. Reported from the UI:
+  the headline read "Total Provision CP + Rebuilt RTT accrual / 12", which is the *staged*
+  formula, and a stage has no column - so the card looked unchanged from the version that
+  genuinely did lift the RTT accrual straight out of one, and told a reviewer nothing about
+  the four columns now behind it. `RecalcBasis.formula_expanded` (new) writes every stage out
+  in the headers this workbook uses, and the frontend leads with it, keeping the staged and
+  the declared forms beneath. `recalc/formula.py` gained `expand()`, which inlines the stages
+  in declaration order - one pass is enough, since a stage may only read stages declared
+  before it - and parenthesises each as it goes in: inlining `a + b` into `x + s / 12`
+  unparenthesised gives `x + a + b / 12`, a different sum, and a displayed formula that is
+  not the evaluated one is worse than one nobody can read. It follows the file rather than
+  the entry type, which is what the global `.xlsb` pins: it shows that model's own
+  "Daily Salary" where a column was bound and the business's own id where none was.
+  6 new unit tests, 2 new golden tests, 1 integration assertion, 2 frontend tests.
+
+- 2026-11-04 (8): every numeric column on a record is now covered, so an edit anywhere in the
+  row surfaces. Six new identities over the columns the posted figure is *not* built from -
+  the employer charge rate and amount, the two provision totals that include those charges,
+  the RTT provision stated in money, and the prior period's own leave balance - and six new
+  checks in `calculation_accuracy`, one per identity. Before this, `Provision Totale` could be
+  moved by 1.1 million euros with every check passing, which is exactly what the tampered
+  sample copy had been carrying unnoticed all session.
+  One check per identity rather than one carrying all six, and the reason is the status a
+  tamper reaches: `outcome_for` takes a figures-decided status from the *decisive* figure, a
+  reperform figure is not decisive, so `figures[0]` stands in - grouped, a discrepancy in the
+  second or third identity would surface only as incomplete coverage, partial rather than
+  failed, and a million euros moved in a provision total deserves the stronger word.
+  New mechanism, and the only one this needed: `RowIdentitySpec.against_blank_is_zero`. These
+  columns are left empty for an employee the provision does not apply to rather than written
+  as a nought, and `reperform` skipped a blank compared column - a skipped row is an uncovered
+  row, and an identity that cannot cover the population can never support a pass, so all six
+  would have reported *partial on a clean workbook*: the same landmine `rtt_balance_reperforms`
+  was built as a tool to avoid. Off by default, because a blank is normally a figure the
+  workbook does not state. Verified before turning it on: every blank coincides with a
+  computed nil (the CP provision is itself zero wherever its charge amount is blank; the prior
+  period's earned and taken days are equal wherever its balance is), and with it on all six
+  tie on every record of both periods - 2,273 and 2,280 each, full coverage.
+  The inputs use `coalesce`, which the grammar already had. The two charge identities coalesce
+  the *rate* as well, which is the one assumption here and it is bounded: it could hide a
+  missing rate only on a row whose base provision is non-zero, and there is no such row on
+  either workbook. Checked explicitly rather than assumed, because reading a blank statutory
+  rate as 0% is the sort of confident nought this harness otherwise refuses.
+  A fourth instance of the alias defect, found on the way and fixed: `employer_charges`
+  carried both `"taux charges patronales"` (N, a rate) and `"montant charges patronales"`
+  (O, an amount), so first-match-wins bound the rate and the amount was never bound at all -
+  after `cp_provision`, `rtt_balance` and `rtt_earned`. Split, along with new meanings for
+  `cp_provision_with_charges` (P), `rtt_provision_base` (T), `rtt_employer_charge_amount` (U)
+  and the prior-period CP trio (E, F, G).
+  Verified live: the 1.1M `P9` edit the sample copy carries now fails `cp_provision_total_sums`
+  citing row 9, cell P9, expected 19,287.76 against 1,119,287.76. Each of N, O, T, U, V, E, F
+  and G was then tampered individually on a clean copy and every one surfaced, most through
+  two independent checks. 3 new unit tests on the flag, 12 new golden assertions.
+  Two counts moved as a consequence, both checked rather than just re-pinned: the formula
+  audit now examines 12 of the workbook's columns rather than 6, because an identity over a
+  column is what puts that column in front of the audit, and all six new ones report the
+  same `not_calculated` these files already reported for the other five; and a review now
+  carries 30 checks rather than 24.
+
+- 2026-11-04 (7): the entry formula rebuilds the RTT leg from its source columns (v11), on
+  business instruction, so an edit to any column the entry is built from moves the entry's own
+  number. `cp_provision + rtt_amount / 12` replaces `cp_provision + (rtt_accrual / 12)`, where
+  `rtt_amount` is now three declared stages rather than a column read: the yearly entitlement
+  prorated over months worked (`earned_rtt_days`), the days taken subtracted and floored
+  (`unused_rtt_days`), then valued at the daily rate. Five source columns instead of two
+  (`Acquis RTT`, `Months to Accrue`, `Pris RTT`, `Daily Salary (RTT Rate)`, `Total Provision
+  CP`), and each stage carries an `agrees_with` naming the column the file states its own
+  answer in - so a tampered *stated* column is still caught, as a corroboration that no longer
+  agrees, which drops the check to partial through the ordinary coverage rule with no special
+  case anywhere.
+  `recalc/formula.py` gained `if(condition, then, otherwise)` and six comparisons, because the
+  convention "an employee who has taken no RTT accrues none of it" is not expressible with the
+  four operators. Written, measured and rejected first: scaling the leg by `min(days_taken, 1)`
+  is correct only while nobody takes a half day, and three records across the two real
+  workbooks do - it put 2,271 of 2,273 rows right and invented two false exceptions. The
+  untaken branch is not evaluated, a comparison with an absent side is `None` rather than
+  false, and a chained `a < b < c` is a parse error rather than a guess at which reading was
+  meant.
+  Found on the way, and the reason this formula could be written at all: `rtt_earned_days`
+  (the workbook's own "Earned RTT Days") was aliased to the *same meaning* as the yearly
+  "Acquis RTT", so one meaning stood in for two different quantities and first-match-wins bound
+  the entitlement. The third instance of that exact defect, after `cp_provision` (2026-11-02)
+  and `rtt_balance`. Split into its own meaning, which also gave that column its first reader -
+  verified safe on the `.xlsb`, which carries no such column and so binds nothing differently.
+  The practical effect is visible on a tampered copy of 305800.xlsx carrying `AA9 = 100`
+  against a 5.67-day balance: previously invisible to every check in the harness, now
+  `earned_rtt_days` reports 2,272 of 2,273 records agreeing.
+  Also fixed: an incomplete row's citation named every blank declared input as the reason it
+  could not be rebuilt, including the optional ones. With `Acquis RTT` and `Pris RTT` now
+  declared and blank on 137 and 547 records, the two `#N/A` rows on 305800.xlsx read as
+  "Total Provision CP, Acquis RTT and Pris RTT holds no number" - pointing a reviewer at two
+  columns there is nothing wrong with. Only required inputs are named now, falling back to
+  every blank where nothing required is missing.
+  A second validator on `JETypeContext` cross-checks every meaning the recalculation names
+  against the table that type declares - the sibling of the identity check, and needed here
+  because a misspelled `agrees_with` is *silent*: the engine looks it up in the bound table,
+  finds nothing and records no corroboration, so the strongest evidence on the work paper
+  would quietly not be there.
+  Verified against all four real workbooks before landing: 236264.xlsx now reconciles outright
+  at 28,672,591.23 against 28,672,591.24 booked (a cent out where v10 was three, since a
+  product recomputed in Decimal keeps precision the stated column had rounded away);
+  305800.xlsx at 27,905,812.63 against 27,905,812.64, still partial for the two `#N/A`
+  employees; all four corroborating legs tie on every one of 2,280 and 2,273 records; and
+  935348.xlsb still reports `unable_to_validate`, unchanged since v9. `make_discrepancy.py
+  --preset` is still stale (it edits `fte_accrual`/`total_accrual`, neither decisive since v9,
+  with a `MOVE_BY` below the 1% tolerance) and was deliberately left alone - a separate change.
+  Presentation came with it, because four stages instead of two broke the work paper's own
+  table. `RecalcComponent.label` was `term.description or term.id`, so the "Stage" column
+  held whole paragraphs; `DerivedTermSpec` now carries a short `label` beside the sentence -
+  the same split `RowIdentitySpec` already had - and `RecalcComponent` carries both. One
+  `display` map now writes every expression a reader sees, so a stage is named the way the
+  rest of the paper names it rather than by its id: the headline reads "Total Provision CP +
+  Rebuilt RTT accrual / 12" and not "... + rtt_amount / 12". Still a substitution and never
+  a translation - a label is the business's own name, not prose invented for a formula.
+  Frontend (JEVE-FE, same branch): the stages table already rendered generically, so it
+  picked the new stages up with no change; `RecalcComponent.description` was added to the
+  type and is rendered under each stage's name, and the fixture now carries two stages so the
+  stage-to-stage substitution is covered. 1 new frontend test.
+  11 new unit tests on the grammar, 4 on the new validator, 3 new golden tests (the two new
+  legs on both periods, and each stage reading back in the preparer's own headers), 5 golden
+  and 3 integration expectations updated.
 
 - 2026-11-04 (6): `make runserver`'s auto-reload now watches YAML as well as Python.
   `uvicorn.run(..., reload=True)` with no `reload_includes` defaults, via

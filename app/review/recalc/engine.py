@@ -59,7 +59,7 @@ from review.models.recalculation import (
 )
 from review.models.verdicts import Status
 from review.models.workbook_data import Cell, Sheet
-from review.recalc.formula import CompiledFormula, compile_formula, substitute
+from review.recalc.formula import CompiledFormula, compile_formula, expand, substitute
 from review.recalc.formula_audit import audit_formulas
 from review.tools.base import BoundTable, ToolContext, ToolError
 from review.utils.sheet_utils import column_index, column_letter
@@ -121,7 +121,14 @@ def recalculate(
     headers = _headers(sheet, bound)
     declared = _readings(spec, bound, headers)
     labels = {reading.id: reading.header or reading.id for reading in declared}
-    basis = _basis(spec, bound, labels, headers)
+    # What a reader sees every name as. An input shows as the header the preparer wrote; a
+    # derived term has no column, so it shows as the short name the business gave the stage.
+    # Without the second half an expression comes out half in the preparer's words and half
+    # in the machine's - "Total Provision CP + rtt_amount / 12" - and a sentence like that
+    # reads as a bug rather than as arithmetic. Both halves are names somebody wrote down,
+    # so this is still a substitution and never a translation.
+    display = {**labels, **{term.id: term.label for term in spec.derive if term.label}}
+    basis = _basis(spec, bound, display, headers)
     booked = _booked(ctx, spec)
 
     unbound = [reading.id for reading in declared if reading.required and not reading.bound]
@@ -150,7 +157,9 @@ def recalculate(
     # figure the approved way" is only worth asking once there is a figure to ask it about.
     audit = audit_formulas(ctx, ctx.formula_shapes, _reperformance(ctx), spec)
     by_meaning = {meaning: headers.get(letter, "") for meaning, letter in bound.ref.columns.items()}
-    paper = _finish(spec, basis, readings, found, booked, by_meaning, audit, started=started)
+    paper = _finish(
+        spec, basis, readings, found, booked, by_meaning, audit, display, started=started
+    )
     return paper, tuple(found.full_rows)
 
 
@@ -500,6 +509,13 @@ def _basis(
         stated_column=stated,
         stated_header=headers.get(stated, ""),
         formula=spec.formula,
+        # Two forms, and the reader needs both. The expanded one names every column the
+        # arithmetic reads, which is the only way a stage like "the rebuilt RTT accrual"
+        # stops hiding the four columns behind it; the staged one stays readable. Both are
+        # built from this workbook's own headers, so both follow the file.
+        formula_expanded=expand(
+            spec.formula, [(term.id, term.expression) for term in spec.derive], labels
+        ),
         formula_in_headers=substitute(spec.formula, labels),
         sign=spec.sign,
         currency=spec.currency.default,
@@ -620,6 +636,7 @@ def _finish(
     booked: BookedAmount,
     by_meaning: Mapping[str, str],
     audit: tuple[tuple[FormulaFinding, ...], int],
+    display: Mapping[str, str],
     *,
     started: float,
 ) -> EntryRecalculation:
@@ -655,7 +672,7 @@ def _finish(
         rows_agreeing=found.rows_agreeing,
         row_impact=found.row_impact,
         inputs=readings,
-        components=_components(spec, found, readings),
+        components=_components(spec, found, readings, display),
         corroborations=_corroborations(spec, found, by_meaning),
         citations=_choose(found.citations, cap=CITATION_CAP),
         citation_count=found.citation_count,
@@ -682,18 +699,25 @@ def _status(found: _Pass, within: bool | None, complete: bool) -> Status:
 
 
 def _components(
-    spec: RecalculationSpec, found: _Pass, readings: Sequence[RecalcInputReading]
+    spec: RecalculationSpec,
+    found: _Pass,
+    readings: Sequence[RecalcInputReading],
+    display: Mapping[str, str],
 ) -> tuple[RecalcComponent, ...]:
-    """Each derived term, totalled, so the recomputed figure comes apart for a reader."""
-    labels = {reading.id: reading.header or reading.id for reading in readings}
+    """Each derived term, totalled, so the recomputed figure comes apart for a reader.
+
+    ``display`` is the same map the headline formula is written with, so a stage built on an
+    earlier stage names it the way the rest of the paper does rather than by its id.
+    """
     quantum = Decimal(1).scaleb(-spec.rounding.decimals)
     rounding = _ROUNDING[spec.rounding.mode]
     return tuple(
         RecalcComponent(
             id=term.id,
-            label=term.description or term.id,
+            label=term.label or term.id,
+            description=term.description,
             expression=term.expression,
-            in_headers=substitute(term.expression, labels),
+            in_headers=substitute(term.expression, display),
             unit=term.unit,
             total=found.term_totals.get(term.id, _ZERO).quantize(quantum, rounding=rounding),
             rows_populated=found.term_rows.get(term.id, 0),
@@ -962,18 +986,27 @@ def _missing_citation(
     columns: Mapping[str, int],
     cells: Mapping[tuple[int, int], Cell],
 ) -> RecalcCitation:
-    named = _join([labels.get(name) or name for name in missing]) or "an input the formula needs"
+    # Only the inputs the formula cannot do without are named as the reason. A declared
+    # input may be optional because a blank is the business's own answer - an employee with
+    # no RTT entitlement has no entitlement column - and those are blank on thousands of
+    # records that rebuild perfectly well. Listing them beside the one that actually stopped
+    # this row would point a reviewer at columns there is nothing wrong with. Where nothing
+    # required is missing, every blank is named: the row did fail to rebuild, and a citation
+    # that names no column at all is worse than one naming too many.
+    required = {reading.id for reading in readings if reading.required}
+    blocking = [name for name in missing if name in required] or list(missing)
+    named = _join([labels.get(name) or name for name in blocking]) or "an input the formula needs"
     return RecalcCitation(
         row=row,
         sheet=sheet,
         kind=DiscrepancyKind.INPUT_MISSING,
         why=(
-            f"{named} holds no number on this row, so the record could not be rebuilt. "
-            "Nothing was summed for it: reading the gap as a zero would turn a missing input "
-            "into a confident amount."
+            f"{named} {'holds' if len(blocking) == 1 else 'hold'} no number on this row, so "
+            "the record could not be rebuilt. Nothing was summed for it: reading the gap as a "
+            "zero would turn a missing input into a confident amount."
         ),
         inputs=_cited(row, labels, readings, columns, cells),
-        missing=tuple(missing),
+        missing=tuple(blocking),
     )
 
 
