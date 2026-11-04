@@ -131,15 +131,20 @@ def _coverage_counts(coverage: RowCoverage) -> list[Decimal]:
 
 
 def _counts(outcomes: dict[str, CheckOutcome]) -> list[Decimal]:
-    """How many checks ran, how many are waiting on a person, and how many reached each
-    status. A summary opens on these, and they are no less established than an amount."""
+    """How many checks ran, how many are waiting on a person, how many reached each status,
+    and how many sit in each area. A summary opens on the first three; an area's own reason
+    is entitled to the last - "16 check(s); weakest is ..." is as established as a status
+    count, and an area merging several checks together is exactly where that number stops
+    being small enough that nobody would ever write it down."""
     if not outcomes:
         return []
     by_status = Counter(outcome.final_status for outcome in outcomes.values())
+    by_area = Counter(outcome.area for outcome in outcomes.values())
     waiting = sum(1 for outcome in outcomes.values() if outcome.needs_review)
     return [
         Decimal(len(outcomes)),
         Decimal(waiting),
         Decimal(len(outcomes) - waiting),
         *(Decimal(count) for count in by_status.values()),
+        *(Decimal(count) for count in by_area.values()),
     ]

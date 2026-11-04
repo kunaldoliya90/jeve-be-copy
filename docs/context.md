@@ -63,11 +63,14 @@ app/
       health_models.py  HealthResponse
       review_models.py  the HTTP contract: ReviewAccepted, ProgressEvent, ReviewDetail
                         (incl. je_type_source: shape | declared | unknown),
-                        ReviewSummary, WorkbookView, AreaView (+status), CheckView,
-                        EvidenceView.of(), AICallCostView.of(), CostView (+calls),
-                        ErrorResponse, area_status(), stored_check(). snake_case end to
-                        end; separate from review/models/ on purpose - except
-                        split_summary and recalculation, which are carried as harness models
+                        ReviewSummary, WorkbookView, AreaView (+status), CheckView
+                        (+samples: FigureSampleView, read field-by-field from a figure's
+                        sample dict so a tool whose sample means something else carries
+                        nulls rather than failing), EvidenceView.of(), AICallCostView.of(),
+                        CostView (+calls), ErrorResponse, area_status(), stored_check().
+                        snake_case end to end; separate from review/models/ on purpose -
+                        except split_summary and recalculation, which are carried as
+                        harness models
       llm_models.py     LLMPricing (USD per 1M tokens), LLMRequest (input, instructions,
                         reasoning_effort, max_output_tokens), TokenUsage, LLMCost,
                         LLMCompletion (text, usage, response_id, incomplete_reason),
@@ -135,9 +138,11 @@ app/
                         MethodologyCache, PictureCache; idle-TTL, thread-safe, keys
                         length-prefixed
       business_rules.yaml   credits, needs_review_cap, bands, tolerance, trend, pii
-      je_types/vacation_accrual_france.yaml   v3. 8 areas, 19 checks (16 by figures),
-                        discriminators, methodology, recalculation (the approved formula and
-                        its inputs), accounts, population, evidence
+      je_types/vacation_accrual_france.yaml   v6. 8 areas, 22 checks (19 by figures),
+                        discriminators, methodology, reperformance (the record-level
+                        identities), recalculation (the approved formula and its inputs),
+                        accounts, population, evidence. tables[].meanings is what the checks
+                        actually read, and it is enforced against the arithmetic now
       prompts/          AI-1,2,3,4,5,R,M,X
     agents/           every model call. None of them can change a number
       projections.py    the AI boundary, enforced in code: no workbook, no employee data
@@ -159,10 +164,21 @@ app/
                         looked" and "looked and could not read it" differently
     recalc/             step 13c: the entry rebuilt from the inputs the business approved
       formula.py        the approved formula, parsed (never eval'd) into closures and cached:
-                        four operators, max/min/abs/round, literals, parentheses. A missing
-                        input propagates as None, so a row an input does not resolve on is
-                        incomplete rather than recomputed as a zero. substitute() rewrites
+                        four operators, max/min/abs/round/coalesce, literals, parentheses. A
+                        missing input propagates as None, so a row an input does not resolve on
+                        is incomplete rather than recomputed as a zero - coalesce(value,
+                        default) is the one deliberate exception, verified against real data
+                        for a blank that is itself the business's answer. substitute() rewrites
                         an expression in the preparer's own column headers
+      formula_audit.py  the second half of step 13c: the formulas the *workbook* applies,
+                        read and never evaluated. Per column the business declares arithmetic
+                        for: not calculated at all, cells that disagree with each other, a
+                        constant typed over one, or references resolving to different meanings
+                        than the approved expression reads - the last being the only fault a
+                        figure that ties cannot hide. Two guards keep it honest: only record
+                        rows are read, because the one formula in one total column is the
+                        preparer's own SUBTOTAL beneath the data, and a column that references
+                        itself is a carry-forward rather than another derivation
       engine.py         recalculate(ctx, spec) -> EntryRecalculation. One pass over the
                         records: inputs read straight out of the sheet's sparse dict into one
                         reusable row mapping, derived terms in declaration order, the formula,
@@ -220,7 +236,7 @@ app/
                         BoundTable resolves meanings via the verified map. run_tool() is
                         also where a figure's exemplars are capped at ctx.figure_samples.
                         assign_figure_ids(), worst_first()
-    tools/registry.py   the 18 tools a plan may name, and catalogue() for AI-2
+    tools/registry.py   the 17 tools a plan may name, and catalogue() for AI-2
     tools/calculation.py    balance, control_totals, rollup_chain
     tools/recalculation.py  recalc_entry_total: the thin half of step 13c. run_recalculation()
                         runs the engine once and returns the work paper *and* the figures, so
@@ -228,9 +244,19 @@ app/
                         decisive entry-level figure, a row-level one carrying the coverage,
                         and one per corroborated leg. The basis arrives on ctx.je_type_args,
                         never as a plan argument
-    tools/reperformance.py  recalc_accrual, recalc_leave_balance, negative_scan,
-                        classification_check, population_reconcile
-    tools/salary.py     recalc_salary_per_day, salary_validate
+    tools/reperform.py  the one tool for every record-level identity the business declares.
+                        Reads them off ctx.je_type_args, evaluates each over the records, keeps
+                        the declared per-row tolerance and the min_tie_rate guard, and reports
+                        a column this workbook lacks as unable to validate. It replaced
+                        recalc_accrual, recalc_leave_balance and recalc_salary_per_day
+    tools/reperformance.py  negative_scan, classification_check, population_reconcile,
+                        rtt_balance_reperforms - the row-level work that is not a formula.
+                        The last rebuilds the RTT balance used for valuation from days earned,
+                        days taken and months to accrue, as a tool rather than a reperform
+                        identity because the rule it reproduces needs two blanks folded to
+                        zero rather than read as missing, verified against real data, not one
+                        line of arithmetic
+    tools/salary.py     salary_validate: whether the daily rate is usable where it is used
     tools/entry.py      account_mapping, reversal_check, period_agreement,
                         evidence_register, formula_health, pii_scan
     tools/methodology.py    methodology_drift: the period stamp by code, the stated basis
@@ -247,7 +273,8 @@ app/
                         EvidenceStatus, PictureReading, PIIFinding, PIIKind
       verdicts.py       Status + strictness()/stricter(), ReviewFlag, Finding, Verdict,
                         Challenge, CheckOutcome
-      recalculation.py  RecalcUnit, RoundingMode, DiscrepancyKind, BookedMethod, CitedValue,
+      recalculation.py  RecalcUnit, RoundingMode, DiscrepancyKind, BookedMethod,
+                        FormulaFault, FormulaFinding, CitedValue,
                         RecalcCitation, RecalcInputReading, RecalcComponent,
                         RecalcCorroboration (+.agrees), BookedAmount, RecalcBasis,
                         EntryRecalculation (+.complete, .ties): step 13c's work paper,
@@ -266,7 +293,8 @@ app/
       context.py        JETypeContext, BusinessRules, CheckSpec, EvidenceSpec, VariantSpec,
                         DiscriminatorSpec, MethodologySpec, ContextVersions, and the
                         recalculation basis (RecalculationSpec, RecalcInputSpec,
-                        DerivedTermSpec, BookedSpec, RoundingSpec, CurrencySpec) whose
+                        DerivedTermSpec, BookedSpec, RoundingSpec, CurrencySpec) and the
+                        record-level identities (ReperformanceSpec, RowIdentitySpec) whose
                         formulas are compiled in a validator, so a malformed one fails at
                         startup naming the field. extra="forbid" so a YAML typo is a startup
                         error, not a rule that does nothing
@@ -391,6 +419,95 @@ These are the user's choices. They override the guidelines; do not flag them in 
   validator, so a malformed formula or a typo in an input name is a startup error naming the
   field rather than a term that silently evaluates to nothing on every row. A JE type that
   states no formula reports the recalculation as not run; nothing assumes one.
+- The **record-level arithmetic is declared too** (`reperformance.identities`, version 4).
+  One `reperform` tool evaluates any of them, and it replaced three tools whose arithmetic
+  was Python. The reason is not that the code was wrong: a business owner could read their
+  own arithmetic only by reading code, and a country whose leave convention differs needed a
+  new tool rather than a new line of YAML. Every decision those tools carried is declared
+  rather than hardcoded now - the per-row tolerance (a product rounded before it was stored
+  needs a cent of room; a sum of two stored amounts does not) and the `min_tie_rate` below
+  which an identity reports as *unable to validate* rather than as thousands of exceptions.
+  Verified by reproducing the old figures exactly on all three workbooks, knife-edge
+  included: 1,177 of 1,214 compared rows on one period's RTT movement, which is the figure
+  the guardrail tests already pinned.
+- Declaring the identities made a latent defect visible: `tables[].meanings` had **no reader
+  at all**, and the leave columns the three tools read were never in it. A workbook missing
+  `cp_earned` would have failed inside a tool instead of being reported at step 12. The
+  validator that compiles each identity against the table's meanings is that field's first
+  reader, and the list now says what the checks actually read.
+- A fifth identity, `cp_rtt_composition` (v5): the stated total equals the CP provision plus
+  a twelfth of the RTT accrual - the same convention `methodology.notes` already named in
+  prose but nothing had ever evaluated. It closes a gap none of the other identities cover:
+  `fte_split_sums` and `entry_total_recalculates` both take `fte_accrual`/`non_fte_accrual` as
+  given and only check that they were summed correctly, so an edited `cp_provision` or
+  `rtt_accrual` that never touches the split or the total tied every other check in the file.
+  Verified to the cent on both French workbooks before being declared (2,271/2,271 and
+  2,280/2,280 rows) - the same bar as every other identity here.
+  Declaring it surfaced a second latent defect, in the alias table rather than in the YAML:
+  `cp_provision` carried two alias phrases, `"total provision cp"` (column M, the combined
+  N-1 + N provision the business means) and `"provision cp n"` (column L, the current
+  period alone), and first-match-wins silently bound L. Every file in this JE type carries
+  both headers, so the new identity disagreed on nearly every row of an otherwise clean
+  workbook until the alias was narrowed to the one phrase that names the quantity the
+  rest of this file is written over - and the recalculation's existing `cp_provision` input
+  (`recalculation.inputs`, carried for the reader since v4) had been quietly reading the
+  wrong column the whole time.
+- Two more identities, v6, one level further back than `cp_rtt_composition`: that check takes
+  `cp_provision` and `rtt_accrual` as given, so editing the columns *they* are built from still
+  tied everywhere.
+  `cp_provision_builds_up` rebuilds the CP provision from the prior- and current-period legs
+  the payroll extract types separately (`cp_provision_prior`, `cp_provision_current` - new
+  meanings, column H and L). Either leg is blank in a period it does not apply to - a new
+  joiner has no N-1 leg - and the business's own total simply omits it, which
+  `coalesce(value, 0)` reproduces. Verified on both workbooks: every one of the 1,999 and
+  1,961 rows where neither leg is blank ties, and so does every one of the 274 and 319 rows
+  where one leg is. `coalesce` is a new, fifth function in `recalc/formula.py`'s grammar for
+  this - the one deliberate hole in "a missing input propagates," written explicitly in the
+  business's own expression rather than assumed by the engine for every formula.
+  `rtt_balance_reperforms` (new tool, `tools/reperformance.py`) rebuilds the RTT days actually
+  valued from days earned, days taken and months to accrue (`months_to_accrue` - new meaning,
+  already aliased but never declared). Not a `reperform` identity: on both workbooks, a blank
+  "Pris RTT" does not carry the full earned-to-date balance forward - the file's own balance
+  is zero on every one of 547 and 527 such rows - and a blank "Acquis RTT" is 137 and 132
+  employees with real CP activity and simply no RTT entitlement that period, not a data gap,
+  their balance zero too on all of them. Declaring either with `reperform`'s missing-propagates
+  rule would read a sixth of the population as unbound rather than tied, which would leave the
+  check permanently short of full coverage - never a pass - on a workbook where nothing is
+  wrong; a genuinely unresolved row still reads as unbound (two employees on 305800.xlsx carry
+  an unmapped `#N/A` staffing type with every CP and RTT column blank, and `cp_provision_rebuilds`
+  correctly reports them so, rather than inventing a zero for a row actually missing data).
+  Both new checks were verified live against both real workbooks before being wired in: edits
+  to M, H, L, Q and Z on a row where the edit is not masked by the "nothing taken" rule each
+  now surface as a cited difference; a tamper that only touches an input the posted figure
+  already discounts - e.g. the earned days on a row with nothing taken - stays invisible, which
+  is a property of the business's own convention and not a gap in these checks.
+- The **workbook's own formulas are audited after the rebuild**, which closes the one gap the
+  recalculation cannot see: a column built from the wrong columns still produces the right
+  total on every record where the missing input happens to be zero, so the entry reconciles,
+  every check passes, and the arithmetic is still not the approved one. Proved on a real
+  workbook - 305800 given `=AF9` in place of `=AF9+AG9` on all 2,273 records rebuilds to
+  27,905,812.64 against 27,905,812.64 booked with zero citations, and the audit reports that
+  the column reads the wrong inputs.
+  It compares **which columns are read**, never the shape of the expression: `=B2+C2` and
+  `=SUM(B2:C2)` are the same arithmetic written two ways, and judging the shape would mean
+  inventing an opinion about what the preparer meant. Nothing evaluates Excel anywhere.
+  Two guards came out of the real files and each prevents a confident false finding: only
+  *record* rows are read, because the only formula in one period's total column is the
+  preparer's own `SUBTOTAL` on the row beneath the data, and a column that references itself
+  is a carry-forward rather than an alternative derivation.
+  `formula_defects_can_fail_check` in `business_rules.yaml` - until now a setting nothing
+  read - decides whether a fault may fail the check. It stays false: a fault is reported
+  beside the figure and moves no score, the treatment every other formula defect in the
+  harness gets. Turning it on is a decision about how strictly these entries are reviewed,
+  and not one for code to take.
+  Only a **defect** may block it, which is `FormulaFault.is_defect`: different inputs,
+  inconsistent cells, a constant typed over a formula. A column the file states rather than
+  calculates, and a format carrying no formulas at all, are limits of the evidence and are
+  reported without touching any status. The first cut of this let *any* finding block, which
+  would have failed every review on all three sample workbooks the moment the business threw
+  the switch - every one of them states columns that arrive from the payroll extract. A
+  setting that cannot safely be turned on is a landmine rather than a setting, so the
+  classification is pinned by its own tests.
 - Step 13c is its **own numbered step**, not a tool inside step 13's fan-out, for two
   reasons: it produces a work paper as well as figures, and it is the one check whose work is
   visible on the clock, so the person waiting is owed a line of progress naming it (the
@@ -600,6 +717,194 @@ These are the user's choices. They override the guidelines; do not flag them in 
 
 Newest first, one line per change. Add a line with every change.
 
+- 2026-11-04 (6): `make runserver`'s auto-reload now watches YAML as well as Python.
+  `uvicorn.run(..., reload=True)` with no `reload_includes` defaults, via
+  `uvicorn.supervisors.watchfilesreload`, to globbing `*.py` only - so every business-rule
+  edit this session made to `review/context/*.yaml` and `je_types/*.yaml` (the evidence
+  completeness fix, the formula swap, the tolerance change) was invisible to the dev server's
+  reload watcher. The server kept answering from whichever context it had loaded at its last
+  Python-triggered restart, which reads exactly like a fix was not applied - the "0/100, No
+  evidence" and "score still 0" reports chased across this session were this, each time.
+  `app/main.py` now passes `reload_includes=["*.py", "*.yaml", "*.yml"]`; no new dependency,
+  since `watchfiles` (the reloader that actually honours `reload_includes` - the plain
+  stat-based fallback ignores it entirely and warns as much) is already pulled in by
+  `uvicorn[standard]`, already pinned in `app/requirements/base.txt`.
+
+- 2026-11-04 (5): the entry-level tolerance on `entry_total_recalculates` widened from 0.1%
+  to 1% (v10), on business instruction, after checking whether the -0.03/-0.01 dust the v9
+  formula carries (see the entry below) was actually a rounding bug first. It is not.
+  Tried and empirically ruled out: rounding each leg to the cent before combining them
+  (matching the worked example's own intermediate step) gives the identical aggregate total
+  either way on both real files - the two rounding orders are not where the dust comes from.
+  Also tried: rounding `rtt_accrual` itself to the cent before dividing, on the theory that a
+  cell holding a formula result can carry float precision past the cent (`2447.8199999999997`
+  for a value shown as `2,447.82`) - on 236264.xlsx three of 2,280 rows are exactly that, and
+  normalising them changes nothing in aggregate; on 305800.xlsx it makes the entry total
+  *worse* (+0.29 instead of -0.01), proving `rtt_accrual` genuinely carries more than two
+  decimals of real precision in these files and is not a float artefact to clean up - reading
+  it as 2-decimal currency would have been the bug a "fix" there introduced. The dust is
+  correctly-computed arithmetic meeting data that is not perfectly reconstructible to the
+  cent from these two columns alone, which is exactly what a tolerance is for. 0.1% of a
+  multi-million-euro entry already cleared both real files' dust by orders of magnitude; the
+  widening to 1% is headroom for a smaller entry of this type, not a response to these two.
+  `tolerance_amount` is still computed from `tolerance_pct` dynamically, so nothing besides
+  the one YAML field needed to change. 2 tests updated (a docstring and one hard assertion on
+  `tolerance_pct`); the two synthetic specs in `test_recalculation_spec.py` and
+  `test_engine.py` test the model's own default (still 0.1%) and are untouched on purpose.
+
+- 2026-11-04 (4): the entry recalculation's approved formula (v9), swapped on explicit
+  business instruction: `cp_provision + (rtt_accrual / 12)` replaces
+  `fte_accrual + non_fte_accrual` as what `entry_total_recalculates` and the "Rebuilt to the
+  cent" card decisively rebuild. The business wanted the headline figure itself, not just a
+  nearby block, to move when the CP provision or RTT accrual is wrong - the same arithmetic
+  `cp_rtt_composition`/`accrual_composition_reperforms` already re-performs independently,
+  now promoted to decide rather than corroborate. `fte_split` (the old formula) moves to
+  `recalculation.derive` as a corroborating leg instead - still verified every record, via
+  `fte_split_aggregates` and this leg, just no longer decisive.
+  Flagged and confirmed before landing: 935348.xlsb (the global MSVacation model, tab DENT)
+  carries neither `cp_provision` nor `rtt_accrual` - that convention is French-only - so its
+  entry recalculation now reports `unable_to_validate` (`recomputed_total=0`, formula shown
+  unsubstituted) every time, where it previously reconciled to the cent on 37,613 records.
+  `RecalculationSpec` has one formula for the whole JE type, no per-variant override; the
+  business chose to accept this rather than build one. 236264.xlsx and 305800.xlsx still
+  reconcile within tolerance (-0.03 and -0.01, both inside the 0.1% entry tolerance and never
+  outside the 0.01 row tolerance per record - dividing by 12 and rounding per row leaves a
+  little dust a formula with no division never had), and 305800.xlsx's two employees with an
+  unmapped `#N/A` staffing type (a known, already-documented gap) are now genuinely
+  incomplete under this formula rather than silently covered by FTE/non-FTE always being
+  present.
+  That incompleteness surfaced a real, separate bug: `_entry_figure`'s `ok` was
+  `paper.ties` (within tolerance *and* complete), so an amount that reconciled over an
+  incomplete population read as outright FAIL - `outcome_for`'s partial-coverage branch is
+  only reached when `ok` is already true, and a false `ok` returns FAIL before that branch is
+  ever considered. Fixed in `review/tools/recalculation.py`: `ok` is now `within_tolerance`
+  alone; coverage is the row-level figure's own job, exactly as it already was for the
+  non-decisive figure, and the two now agree with the paper's own three-way `status` instead
+  of flattening partial into fail. New regression test in `test_recalculation.py` pins it.
+  `accrual_composition_reperforms` is now literally the same comparison as the entry-level
+  formula (same expression, same tolerance) and was deliberately left in place rather than
+  removed - a visible, independent cross-check of the same arithmetic, not dead weight, and
+  the business did not ask for it to go.
+  8 golden tests rewritten to match (`BOOKED` vs `RECOMPUTED`, a dedicated test for the global
+  workbook's inconclusive state, `fte_split` added beside `rtt_amount` as a pinned
+  corroboration), 2 integration tests updated with the new totals/formula text, 1 new unit
+  test for the `ok` fix. Full suite green: 90 golden, 83 integration, unit suite clean.
+
+- 2026-11-04 (3): evidence completeness stopped reading as a hard 0/100 the moment one
+  required layer is missing. Reported live: 3 of 4 required layers present (only `approval`
+  missing) scored the area 0/100, `Fail` - because `evidence_baseline` was `decided_by:
+  judgement`, so AI-3 answered the binary question its own prompt asks ("are the four
+  required items present") literally, and `baseline_share` over one check's fail/pass credit
+  has no room for a result in between. `evidence_register`'s tool now carries a `RowCoverage`
+  over the *required* layers only (never the optional two, which must never be what turns a
+  pass into a partial) and the check moved to `decided_by: figures` (v8) - deterministic,
+  the same as nearly every other check in this file, for a question ("is this sheet present")
+  code can already answer outright. Zero required layers present still fails; some but not
+  all is `partial` through the ordinary figures routing, no special case in `rules.py` or
+  `scoring.py`; all required present (regardless of the two optional ones) passes. The
+  required/optional split itself was already declared once, in `je_spec.evidence`
+  (`EvidenceSpec.required`) for the register endpoint - the tool now reads the same list via
+  `ctx.je_type_args["evidence"]` rather than a second copy. New `test_entry.py` (5 tests,
+  the first dedicated test file for `tools/entry.py`); verified live on 305800.xlsx: the area
+  moved from 0/100 Fail to 50/100 Partial, `needs_review` still true since `approval` is
+  still genuinely missing. Full backend suite green.
+
+- 2026-11-04 (2): "the records rebuilt" now shows every calculation-accuracy finding on the
+  same records, not just the entry-level one. Reported live: editing `GPAY!M9`/`M10` (Total
+  Provision CP) correctly failed `cp_provision_rebuilds` and `accrual_composition_reperforms`,
+  but Section 5 - the entry recalculation's own card, citations and row browser - genuinely
+  could not see it (that formula reads `fte_accrual`/`non_fte_accrual`, never `cp_provision`),
+  which read as a UI bug on a file with a real, correctly-caught discrepancy.
+  `EntryRecalculation.related_checks` (new, `RelatedRecalcCheck`) now carries every other
+  check that reads the recalculation's own table through the generic `reperform` tool and
+  found something - found by recipe (`tool == reperform`, same `table`), never by naming a
+  check, so a new identity on this table is picked up the same way with no further wiring.
+  Each is rendered as its own block in `EntryRecalculation.tsx`, reusing `RecalcCitation`'s
+  Row/Cell/Recomputed/Stated/Difference shape rather than inventing a second table format.
+  `RecalcRow` gains `flags: RowFlag[]`, merged in by row number from those same (already
+  worst-first, capped) citations via `rows_query.merge_related_flags`, so "Browse every
+  record" marks a row any related check flagged, and `filter_rows`'s `changed`/`agrees` and
+  `group_rows`'s `flagged` count now see it too. Nothing is merged into
+  `recomputed_total`/`difference` themselves - a different formula stays a different
+  question. Block lettering in `EntryRecalculation.tsx` is now computed from which optional
+  blocks actually render (`blockLetters`) rather than a hardcoded `'E'`/`'F'` ternary, which
+  was already one new block away from being wrong. Verified live on `305800 - Copy (6).xlsx`:
+  `related_checks` surfaced `cp_provision_rebuilds`, `accrual_composition_reperforms` and
+  (previously invisible here) `leave_balance_recalculates`'s own RTT-leg mismatches, and rows
+  9 and 10 now carry both checks' flags in the row browser. 7 new backend unit tests
+  (`test_rows_query.py`), 2 new frontend tests; 710 backend tests and 259 frontend tests pass.
+
+- 2026-11-04: AI-E (evidence appropriateness, step 12a) disabled for now, on a live finding:
+  305800.xlsx genuinely has mismatched cost centres between the calculation/employee_master
+  evidence and the posting tab, and the hard gate it tripped stopped the whole review before
+  anything else ran - working as designed (`test_evidence_appropriateness_failing_stops_everything_else`,
+  now removed), but not a call the business has signed off trusting yet. `_gate_on_evidence`
+  no longer calls a model at all: `evidence_matches_je_type` always reports `missing_evidence`
+  (zero credit, `ReviewFlag.CHECK_DISABLED`, needs a person) and the rest of the plan always
+  runs regardless of what AI-E would have said - the gate itself is gone, not just loosened.
+  `not_run_for` names it generically, off `ReviewFlag.CHECK_DISABLED` in the stored outcomes
+  rather than a hardcoded check id, so any other JE type that wires this check in gets the
+  same treatment. `ReviewRun.evidence_gate` and `_finish_evidence_inappropriate` removed as
+  dead code; `review/agents/evidence_appropriateness.py` (the model call itself) is untouched
+  and ready to be wired back in behind the same `_gate_on_evidence` call site. 2 integration
+  tests replace the old pass/fail/inconclusive trio.
+
+- 2026-11-03: coverage pushed one level further back than the CP provision and the RTT
+  accrual - to the columns those are themselves built from. `cp_provision_builds_up` (v6, new
+  check `cp_provision_rebuilds`) rebuilds the CP provision from the prior- and current-period
+  legs the payroll extract types separately (new meanings `cp_provision_prior`,
+  `cp_provision_current`), using a new `coalesce(value, 0)` function in `recalc/formula.py`'s
+  grammar because either leg is blank in a period it does not apply to and the business's own
+  total simply omits it - verified exact on every row of both workbooks where that is checkable.
+  `rtt_balance_reperforms` (new tool in `tools/reperformance.py`, new check
+  `rtt_balance_rebuilds` in `leave_validation`) rebuilds the RTT days valued from days earned,
+  days taken and months to accrue (new meaning `months_to_accrue`). Built as a tool rather than
+  a declared identity on purpose: a blank "Pris RTT" does not carry the full earned-to-date
+  balance forward on either workbook (the posted balance is zero on all 547 and 527 such rows),
+  and a blank "Acquis RTT" is 137 and 132 ordinary employees with no RTT entitlement that
+  period, not a data gap - declaring either with `reperform`'s missing-propagates rule would
+  have left the check permanently short of full coverage on a sixth of the population, on a
+  clean file. A genuinely unresolved row (two employees on 305800.xlsx with an unmapped `#N/A`
+  staffing type and every CP/RTT column blank) still correctly reads as unbound via the sibling
+  CP check. `CheckView.samples` (added yesterday) is what made both checks' citations visible
+  without further frontend work. Verified live: edits to M, H, L, Q and Z each now surface as a
+  cited difference on both real workbooks, except where the edited input is one the posted
+  figure already discounts under the business's own convention (the earned days on a row with
+  nothing yet taken) - that is a property of the convention, not a gap in these checks. 2 new
+  integration tests tampering H9 and Q8 on a real workbook, 7 new unit tests for the tool
+  (`test_reperformance.py`), `coalesce` pinned in `test_formula.py` as the one deliberate
+  exception to "a missing input propagates."
+
+- 2026-11-02: an edited CP provision now surfaces as a discrepancy, and a reviewer can see
+  what it is. Reported live: editing `GPAY!M9` (the "Total Provision CP" the payroll extract
+  states) on a real workbook left every check agreeing with itself - `fte_split_sums` and
+  `entry_total_recalculates` both take `fte_accrual`/`non_fte_accrual` as given and only check
+  that they were summed correctly, so nothing re-read the CP provision at all.
+  New identity `cp_rtt_composition` (v5, `accrual_composition_reperforms` in
+  `accrual_reperformance`): the stated total equals the CP provision plus a twelfth of the RTT
+  accrual, the convention `methodology.notes` already described in prose but nothing had ever
+  evaluated. Verified to the cent on both French workbooks (2,271/2,271 and 2,280/2,280 rows)
+  before being declared.
+  Declaring it surfaced a second, pre-existing defect: the alias table bound `cp_provision` to
+  whichever of two columns matched first - column M (`"total provision cp"`, the combined
+  N-1 + N provision) or column L (`"provision cp n"`, the current period alone) - and
+  first-match-wins had silently picked L on both real files. The recalculation's `cp_provision`
+  input (carried for the reader since v4) had been reading the wrong column since it was
+  declared. Fixed by narrowing the alias to the one phrase that names the quantity the rest of
+  the file is written over; `"provision cp n"` is removed rather than kept as a second meaning,
+  since nothing in this JE type currently reads the current-period figure on its own.
+  The API contract gained a field this fix needed and every check benefits from: `CheckView`
+  carries `samples: FigureSampleView[]` (row, cell, expected, actual, difference - each `None`
+  where a tool's sample does not carry it, read defensively field-by-field so a tool whose
+  `"expected"` key means something else entirely, like the formula audit's rewritten
+  expression, is carried as `None` rather than failing the response). Additive: `cells` is
+  unchanged and still built from the same samples. Frontend: `CheckFacts` renders a
+  Row/Cell/Expected/Actual/Difference table in place of the bare cell list whenever a check's
+  samples carry an amount, not behind a disclosure, same as the rest of this report. New
+  integration test tampers `GPAY!M9` on a copy of 236264.xlsx (editing the worksheet XML in
+  place, same technique as `make_discrepancy.py`) and asserts `accrual_composition_reperforms`
+  fails with one cited row carrying expected, actual and a difference that reconciles.
+
 - 2026-10-23 (2): the deployed frontend can reach the API. The app had no CORS middleware
   at all, so every call from the Vercel origin failed the preflight ("No
   'Access-Control-Allow-Origin' header is present"), including the upload, the listing, the
@@ -609,6 +914,40 @@ Newest first, one line per change. Add a line with every change.
   `POST /api/auth/refresh` 404 is not CORS and is not this service: no auth endpoint exists
   here, by design. 4 integration tests on the preflight and the allow-origin header, 3 unit
   tests on the setting.
+
+- 2026-10-29 (2): the formula switch made safe to throw. `formula_defects_can_fail_check`
+  blocked a pass on *any* audit finding, and every sample workbook carries columns that
+  arrive already calculated from the payroll extract - so the first business owner to turn
+  that setting on would have failed every review, including the clean ones. Faults are now
+  classified by `FormulaFault.is_defect`: different inputs, inconsistent cells and a typed-over
+  constant may fail a check; a column the file states rather than calculates, and a format
+  with no formulas, may not. The audit figure reports on defects alone for the same reason,
+  and stays None where nothing could be read. The YAML now also says why the identities are
+  written over column meanings while the entry formula is written over declared inputs with
+  units - the one asymmetry a reader of that file would otherwise trip on.
+
+- 2026-10-29: the business owns the record-level arithmetic too, and the workbook's own
+  formulas are examined now. `reperformance.identities` in the JE type file (version 4)
+  declares each identity as one line over the columns the working carries, with its per-row
+  tolerance and its `min_tie_rate`; the new `reperform` tool evaluates any of them and
+  replaced `recalc_accrual`, `recalc_leave_balance` and `recalc_salary_per_day`. The figures
+  are unchanged on all three workbooks, knife-edge included. Declaring them surfaced a latent
+  defect: `tables[].meanings` had no reader and omitted every leave column those tools read,
+  so step 12 could not have reported one missing.
+  Then `recalc/formula_audit.py`, which closes the gap the rebuild cannot see: for every
+  column the business declares arithmetic for it reports a column that is not calculated,
+  cells that disagree with each other, a constant typed over one, and - the one that matters
+  - references resolving to different columns than the approved expression reads. Such a
+  column ties on every record where the missing input is zero; demonstrated on 305800 with
+  `=AF9` injected in place of `=AF9+AG9`, which still rebuilds to the cent with zero
+  citations while the audit names the column, the cell, what the file does and what the
+  business states instead. Two false findings were found and fixed on the way, both from the
+  real files: the preparer's own `SUBTOTAL` under the data read as the column's derivation,
+  and a typed-over constant reported from the header band above it. Frontend: a new lettered
+  block in the recalculation section carrying the faults, the formula in the preparer's own
+  headers beside the approved one, and distinct treatments for nothing-wrong and
+  nothing-readable. 748 backend tests (90 golden assertions on the three workbooks), 252
+  frontend tests, ruff/mypy/eslint/tsc clean.
 
 - 2026-10-28 (2): `skills/scripts/make_discrepancy.py`, for seeing step 13c fail. The three
   sample workbooks all reconcile to the cent, so the citations, the failed check and the

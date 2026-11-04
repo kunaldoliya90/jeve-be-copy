@@ -33,25 +33,36 @@ from dataclasses import dataclass, field
 from decimal import ROUND_DOWN, ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal
 from typing import Final
 
-from review.models.context import RecalcInputSpec, RecalculationSpec
+from review.models.context import (
+    DerivedTermSpec,
+    RecalcExplainedSpec,
+    RecalcInputSpec,
+    RecalculationSpec,
+    ReperformanceSpec,
+)
 from review.models.recalculation import (
     BookedAmount,
     BookedMethod,
     CitedValue,
     DiscrepancyKind,
     EntryRecalculation,
+    FormulaFinding,
     RecalcBasis,
     RecalcCitation,
     RecalcComponent,
     RecalcCorroboration,
+    RecalcExplained,
+    RecalcExplainedStep,
     RecalcInputReading,
+    RecalcRow,
     RoundingMode,
 )
 from review.models.verdicts import Status
 from review.models.workbook_data import Cell, Sheet
-from review.recalc.formula import compile_formula, substitute
+from review.recalc.formula import CompiledFormula, compile_formula, substitute
+from review.recalc.formula_audit import audit_formulas
 from review.tools.base import BoundTable, ToolContext, ToolError
-from review.utils.sheet_utils import column_index
+from review.utils.sheet_utils import column_index, column_letter
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +71,12 @@ MAX_REPORTED_ACCOUNTS: Final = 6
 
 CITATION_CAP: Final = 12
 """Citations carried on the paper. ``citation_count`` reports the full number beside them."""
+
+_GROUP_MEANINGS: Final = ("cost_center", "fte_classification", "company_code", "staffing_type")
+"""Meanings worth grouping a row-level browse by, when the working binds them. A small,
+conventional list rather than a per-type declaration - the same approach the evidence
+appropriateness check takes for identity columns - since nothing here assumes which of them
+a given JE type's table actually carries."""
 
 CITATION_POOL: Final = 24
 """Citations *held per kind* while the pass runs, from which the paper's are chosen.
@@ -82,12 +99,18 @@ _ZERO: Final = Decimal(0)
 _BLANK: Final = Cell()
 
 
-def recalculate(ctx: ToolContext, spec: RecalculationSpec) -> EntryRecalculation:
+def recalculate(
+    ctx: ToolContext, spec: RecalculationSpec
+) -> tuple[EntryRecalculation, tuple[RecalcRow, ...]]:
     """Regenerate the entry under ``spec`` and report everything the pass measured.
 
     Raises ``ToolError`` only where the workbook cannot support the attempt at all - the
     working itself is not bound, or its sheet is not in the file. Every other shortfall is
     reported on the work paper, because "this could not be established" is a result.
+
+    The second half of the pair is every record the pass walked, kept rather than discarded -
+    see ``RecalcRow``. The work paper's own ``citations`` stays a bounded, worst-first sample
+    for printing; this is the full set, for a reviewer to browse.
     """
     started = time.monotonic()
     bound = ctx.table(spec.table)
@@ -106,21 +129,29 @@ def recalculate(ctx: ToolContext, spec: RecalculationSpec) -> EntryRecalculation
         # The formula cannot be evaluated at all, so nothing is recomputed and nothing is
         # compared. Inconclusive, with the inputs still on the paper so a reader sees which
         # column to go and find rather than being told the entry failed.
-        return _inconclusive(
-            basis,
-            declared,
-            booked=booked,
-            note=(
-                f"{_join(unbound)} is not bound in this workbook, so the approved formula "
-                "could not be evaluated and the entry was not recalculated."
+        return (
+            _inconclusive(
+                basis,
+                declared,
+                audit=audit_formulas(ctx, ctx.formula_shapes, _reperformance(ctx), spec),
+                booked=booked,
+                note=(
+                    f"{_join(unbound)} is not bound in this workbook, so the approved formula "
+                    "could not be evaluated and the entry was not recalculated."
+                ),
+                started=started,
             ),
-            started=started,
+            (),
         )
 
     found = _walk(spec, bound, sheet, declared, labels)
     readings = _with_counts(declared, found)
+    # After the computation, not before it: the question "is this file arriving at the
+    # figure the approved way" is only worth asking once there is a figure to ask it about.
+    audit = audit_formulas(ctx, ctx.formula_shapes, _reperformance(ctx), spec)
     by_meaning = {meaning: headers.get(letter, "") for meaning, letter in bound.ref.columns.items()}
-    return _finish(spec, basis, readings, found, booked, by_meaning, started=started)
+    paper = _finish(spec, basis, readings, found, booked, by_meaning, audit, started=started)
+    return paper, tuple(found.full_rows)
 
 
 # --------------------------------------------------------------------------- the pass
@@ -152,6 +183,8 @@ class _Pass:
     term_impact: dict[str, Decimal] = field(default_factory=dict)
     term_worst: dict[str, tuple[Decimal, int]] = field(default_factory=dict)
     """Term id -> the largest single difference and the row it was on."""
+    full_rows: list[RecalcRow] = field(default_factory=list)
+    """Every record the pass walked, kept rather than pooled. See ``RecalcRow``."""
 
     def cite(self, citation: RecalcCitation) -> None:
         """Offer one citation to its kind's pool, keeping the largest and counting them all.
@@ -211,6 +244,11 @@ def _walk(
         for term, _ in terms
         if term.agrees_with and (letter := bound.ref.columns.get(term.agrees_with))
     }
+    group_columns = {
+        meaning: column_index(bound.ref.columns[meaning])
+        for meaning in _GROUP_MEANINGS
+        if bound.has(meaning)
+    }
 
     quantum = Decimal(1).scaleb(-spec.rounding.decimals)
     rounding = _ROUNDING[spec.rounding.mode]
@@ -247,11 +285,24 @@ def _walk(
             if agrees_index:
                 _corroborate(found, term.id, value, cells, row, agrees_index, headroom)
 
+        row_inputs = _cited(row, labels, readings, columns, cells)
+        row_group = _group_values(cells, row, group_columns)
+        row_terms = _cited_terms(row, row_values, terms, against)
+
         amount = formula.evaluate(row_values)
         if amount is None:
             found.rows_incomplete += 1
             found.cite(
                 _missing_citation(sheet.name, row, missing, labels, readings, columns, cells)
+            )
+            found.full_rows.append(
+                RecalcRow(
+                    row=row,
+                    group=row_group,
+                    kind=DiscrepancyKind.INPUT_MISSING,
+                    inputs=row_inputs,
+                    terms=row_terms,
+                )
             )
             continue
 
@@ -260,6 +311,15 @@ def _walk(
         found.rows_recomputed += 1
 
         if stated_index == 0:
+            found.full_rows.append(
+                RecalcRow(
+                    row=row,
+                    group=row_group,
+                    recomputed=amount,
+                    inputs=row_inputs,
+                    terms=row_terms,
+                )
+            )
             continue
         stated = _number(cells, row, stated_index)
         cell = f"{stated_letter}{row}"
@@ -275,7 +335,18 @@ def _walk(
                         "The formula produced an amount for this record and the workbook "
                         "states none of its own to compare it against."
                     ),
-                    inputs=_cited(row, labels, readings, columns, cells),
+                    inputs=row_inputs,
+                )
+            )
+            found.full_rows.append(
+                RecalcRow(
+                    row=row,
+                    group=row_group,
+                    recomputed=amount,
+                    stated_cell=cell,
+                    kind=DiscrepancyKind.STATED_MISSING,
+                    inputs=row_inputs,
+                    terms=row_terms,
                 )
             )
             continue
@@ -283,6 +354,19 @@ def _walk(
         difference = amount - stated
         if abs(difference) <= headroom:
             found.rows_agreeing += 1
+            found.full_rows.append(
+                RecalcRow(
+                    row=row,
+                    group=row_group,
+                    recomputed=amount,
+                    stated=stated,
+                    stated_cell=cell,
+                    difference=difference,
+                    difference_pct=_percent(difference, stated),
+                    inputs=row_inputs,
+                    terms=row_terms,
+                )
+            )
             continue
         found.row_impact += abs(difference)
         found.cite(
@@ -296,7 +380,21 @@ def _walk(
                 difference=difference,
                 difference_pct=_percent(difference, stated),
                 why=_differs_why(difference, stated, headroom, quantum, rounding),
-                inputs=_cited(row, labels, readings, columns, cells),
+                inputs=row_inputs,
+            )
+        )
+        found.full_rows.append(
+            RecalcRow(
+                row=row,
+                group=row_group,
+                recomputed=amount,
+                stated=stated,
+                stated_cell=cell,
+                difference=difference,
+                difference_pct=_percent(difference, stated),
+                kind=DiscrepancyKind.STATED_DIFFERS,
+                inputs=row_inputs,
+                terms=row_terms,
             )
         )
 
@@ -410,7 +508,23 @@ def _basis(
         tolerance_pct=spec.tolerance_pct,
         row_tolerance=spec.row_tolerance,
         worked_example=spec.worked_example,
+        explained=_explained(spec.explained),
         provisional_basis=spec.provisional_basis,
+    )
+
+
+def _explained(spec: RecalcExplainedSpec | None) -> RecalcExplained | None:
+    if spec is None:
+        return None
+    return RecalcExplained(
+        intro=spec.intro,
+        context=spec.context,
+        steps=tuple(
+            RecalcExplainedStep(label=step.label, detail=step.detail, example=step.example)
+            for step in spec.steps
+        ),
+        summary=spec.summary,
+        caveats=spec.caveats,
     )
 
 
@@ -488,6 +602,16 @@ def _booked(ctx: ToolContext, spec: RecalculationSpec) -> BookedAmount:
 # --------------------------------------------------------------------------- the paper
 
 
+def _reperformance(ctx: ToolContext) -> ReperformanceSpec | None:
+    """The record-level identities, when the entry type states any.
+
+    Read from the context rather than passed in: the audit examines every column the
+    business declares arithmetic for, and the identities are most of them.
+    """
+    spec = ctx.je_type_args.get("reperformance")
+    return spec if isinstance(spec, ReperformanceSpec) else None
+
+
 def _finish(
     spec: RecalculationSpec,
     basis: RecalcBasis,
@@ -495,6 +619,7 @@ def _finish(
     found: _Pass,
     booked: BookedAmount,
     by_meaning: Mapping[str, str],
+    audit: tuple[tuple[FormulaFinding, ...], int],
     *,
     started: float,
 ) -> EntryRecalculation:
@@ -534,7 +659,9 @@ def _finish(
         corroborations=_corroborations(spec, found, by_meaning),
         citations=_choose(found.citations, cap=CITATION_CAP),
         citation_count=found.citation_count,
-        notes=_notes(spec, found, booked, readings),
+        formula_findings=audit[0],
+        formula_columns_audited=audit[1],
+        notes=_notes(spec, found, booked, readings, audit[0]),
         duration_ms=int((time.monotonic() - started) * 1000),
     )
 
@@ -637,6 +764,7 @@ def _notes(
     found: _Pass,
     booked: BookedAmount,
     readings: Sequence[RecalcInputReading],
+    findings: Sequence[FormulaFinding] = (),
 ) -> tuple[str, ...]:
     """What the recalculation could not do. Never left for a reader to infer from a blank."""
     notes: list[str] = []
@@ -663,6 +791,12 @@ def _notes(
         notes.append(
             f"The booked amount could not be read: {booked.description}. The recomputed "
             "figure stands on its own and nothing has been compared against it."
+        )
+    if findings:
+        notes.append(
+            f"The workbook's own arithmetic was examined and {len(findings):,} fault(s) were "
+            "found in it. They are listed with the cell to open the file at: a figure that "
+            "agrees is not evidence that the formula behind it is the approved one."
         )
     return tuple(notes)
 
@@ -718,6 +852,7 @@ def _inconclusive(
     basis: RecalcBasis,
     readings: Sequence[RecalcInputReading],
     *,
+    audit: tuple[tuple[FormulaFinding, ...], int],
     booked: BookedAmount,
     note: str,
     started: float,
@@ -728,6 +863,8 @@ def _inconclusive(
         explanation=note,
         booked=booked,
         inputs=tuple(readings),
+        formula_findings=audit[0],
+        formula_columns_audited=audit[1],
         notes=(note,),
         duration_ms=int((time.monotonic() - started) * 1000),
     )
@@ -773,6 +910,47 @@ def _cited(
         for reading in readings
         if reading.id in columns or not reading.column
     )
+
+
+def _group_values(
+    cells: Mapping[tuple[int, int], Cell], row: int, group_columns: Mapping[str, int]
+) -> dict[str, str]:
+    """This row's own value for each grouping dimension the table happens to bind."""
+    return {
+        meaning: text
+        for meaning, index in group_columns.items()
+        if (text := _text(cells, row, index))
+    }
+
+
+def _cited_terms(
+    row: int,
+    row_values: Mapping[str, Decimal | None],
+    terms: Sequence[tuple[DerivedTermSpec, CompiledFormula]],
+    against: Mapping[str, int],
+) -> tuple[CitedValue, ...]:
+    """Each derived term's own value on this row, in the same shape as an input.
+
+    A derived term is computed, not read from a column, so it has no cell of its own - only
+    the column it is corroborated against does, where one exists. Terms the formula could not
+    evaluate on this row are left out rather than cited as zero.
+    """
+    cited: list[CitedValue] = []
+    for term, _compiled in terms:
+        value = row_values.get(term.id)
+        if value is None:
+            continue
+        agrees_index = against.get(term.id)
+        cited.append(
+            CitedValue(
+                id=term.id,
+                label=term.description or term.id,
+                cell=f"{column_letter(agrees_index)}{row}" if agrees_index else "",
+                value=value,
+                unit=term.unit,
+            )
+        )
+    return tuple(cited)
 
 
 def _missing_citation(

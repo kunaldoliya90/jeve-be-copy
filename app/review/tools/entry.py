@@ -4,7 +4,8 @@ from collections import Counter
 from decimal import Decimal
 from typing import Any
 
-from review.models.evidence import Figure, PictureReading
+from review.models.context import EvidenceSpec
+from review.models.evidence import Figure, PictureReading, RowCoverage
 from review.tools.base import BaseTool, ToolContext, worst_first
 
 
@@ -224,17 +225,43 @@ class EvidenceRegisterTool(BaseTool):
                 entry["issue"] = note
             (found if present else missing).append(entry)
 
+        required = {
+            spec.id
+            for spec in ctx.je_type_args.get("evidence", ())
+            if isinstance(spec, EvidenceSpec) and spec.required
+        }
+        present_ids = {str(entry["item"]) for entry in found}
+        required_present = len(required & present_ids)
+        # Coverage over the *required* layers, not all six: an optional layer missing is a
+        # gap the register still reports, but it must never be what turns a pass into a
+        # partial. With no required layer declared there is nothing to be partial about.
+        coverage = (
+            RowCoverage(
+                rows_total=len(required), rows_bound=len(required), rows_tied=required_present
+            )
+            if required
+            else None
+        )
+
         return [
             self.figure(
                 check_id,
-                ok=not missing,
+                # Some required layer missing is partial, by coverage, below - not a silent
+                # pass. None of them present at all is the one case nothing here can rescue.
+                ok=(required_present > 0) if required else not missing,
                 summary=_evidence_summary(len(found), len(self.SATISFIED_BY), missing),
                 exception_count=len(missing),
+                coverage=coverage,
                 # Every layer, not only the gaps, because the register renders from these
                 # and a reviewer needs the satisfied rows to see what was actually relied
                 # on. Missing first so the sample cap can never be what hides a gap.
                 samples=[*missing, *found],
-                numbers=[Decimal(len(found)), Decimal(len(self.SATISFIED_BY))],
+                numbers=[
+                    Decimal(len(found)),
+                    Decimal(len(self.SATISFIED_BY)),
+                    Decimal(len(required)),
+                    Decimal(required_present),
+                ],
                 args={},
             )
         ]

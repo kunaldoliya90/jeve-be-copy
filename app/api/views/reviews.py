@@ -7,7 +7,8 @@ later down a progress stream the client may not even be watching yet.
 
 import logging
 from collections.abc import AsyncIterator
-from typing import Annotated
+from decimal import Decimal, InvalidOperation
+from typing import Annotated, Any
 
 from fastapi import File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from sse_starlette.sse import EventSourceResponse
@@ -21,6 +22,7 @@ from api.pydanticmodels.review_models import (
     CostView,
     ErrorResponse,
     EvidenceView,
+    FigureSampleView,
     ReviewAccepted,
     ReviewDetail,
     ReviewSummary,
@@ -345,10 +347,14 @@ def _detail(run: ReviewRun) -> ReviewDetail:
                 "band": score.band,
                 "provisional": score.provisional,
                 "areas": _areas(run),
-                "observations": _observations(run),
-                "needs_person": _needs_person(run),
             }
         )
+    # Unconditional on score: a check can run, and need a person, without the review ever
+    # being scored — the evidence appropriateness gate is exactly that case. Both of these
+    # read from `run.context.outcomes` alone, same as the stored re-read already does.
+    detail = detail.model_copy(
+        update={"observations": _observations(run), "needs_person": _needs_person(run)}
+    )
     if run.context is not None and run.context.evidence_register:
         detail = detail.model_copy(
             update={"evidence": [EvidenceView.of(item) for item in run.context.evidence_register]}
@@ -453,6 +459,12 @@ def _check_view(outcome: CheckOutcome, spec: CheckSpec | None, run: ReviewRun) -
     figures = run.context.figures_for(outcome.check_id) if run.context else ()
     decisive = next((figure for figure in figures if figure.decisive), None)
     impact = next((figure.financial_impact for figure in figures if figure.financial_impact), None)
+    samples = [
+        _sample_view(sample)
+        for figure in figures
+        for sample in figure.samples[:3]
+        if sample.get("cell")
+    ][:6]
     return CheckView(
         check_id=outcome.check_id,
         area=outcome.area,
@@ -464,13 +476,38 @@ def _check_view(outcome: CheckOutcome, spec: CheckSpec | None, run: ReviewRun) -
         conclusion=decisive.summary if decisive else "",
         exception_count=sum(figure.exception_count for figure in figures),
         financial_impact=impact,
-        cells=[
-            str(sample.get("cell"))
-            for figure in figures
-            for sample in figure.samples[:3]
-            if sample.get("cell")
-        ][:6],
+        cells=[sample.cell for sample in samples if sample.cell],
+        samples=samples,
     )
+
+
+def _sample_view(sample: dict[str, Any]) -> FigureSampleView:
+    """One figure sample, read field by field: a tool's dict carries whichever of these it has.
+
+    Not every tool's ``expected`` is a number: the formula audit's is a rewritten expression,
+    quoted for a reader rather than compared against anything. ``_as_amount`` reads a figure
+    only where one is actually there, so a tool whose sample means something else is simply
+    carried as ``None`` here rather than failing the whole report.
+    """
+    return FigureSampleView(
+        row=sample.get("row") if isinstance(sample.get("row"), int) else None,
+        cell=str(sample["cell"]) if sample.get("cell") else None,
+        expected=_as_amount(sample.get("expected")),
+        actual=_as_amount(sample.get("actual")),
+        difference=_as_amount(sample.get("difference")),
+    )
+
+
+def _as_amount(value: Any) -> Decimal | None:
+    """``value`` as a ``Decimal``, or ``None`` when it does not hold one. Never raises."""
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
 
 
 def _sheets(run: ReviewRun) -> list[SheetView]:

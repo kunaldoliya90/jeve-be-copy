@@ -35,6 +35,7 @@ def evaluate(expression: str, **values: Decimal | None) -> Decimal | None:
         ("abs(a - b)", Decimal(10)),
         ("round(a / 3, 2)", Decimal("3.33")),
         ("a * 1.5", Decimal(15)),
+        ("coalesce(a, 0)", Decimal(10)),
     ],
 )
 def test_the_grammar_evaluates_as_arithmetic_reads(expression: str, expected: Decimal) -> None:
@@ -79,6 +80,21 @@ def test_an_input_the_row_does_not_carry_at_all_produces_no_amount() -> None:
     assert evaluate("a + missing", a=Decimal(10)) is None
 
 
+def test_coalesce_is_the_one_deliberate_exception() -> None:
+    """Every other function in the grammar turns a missing input into no amount at all.
+
+    ``coalesce`` exists because a blank cell is sometimes the business's own answer - one leg
+    of a two-leg provision that does not apply this period - rather than a gap, and that has
+    to be written explicitly in the business's own expression rather than assumed by the
+    engine for every formula.
+    """
+    assert evaluate("coalesce(a, 0)", a=None) == Decimal(0)
+    assert evaluate("coalesce(a, 0)", a=Decimal(5)) == Decimal(5)
+    # The default side still propagates like anything else: a fallback that is itself
+    # missing is still missing, not silently zero.
+    assert evaluate("coalesce(a, b)", a=None, b=None) is None
+
+
 # ------------------------------------------------------------------------- the refusals
 
 
@@ -101,6 +117,8 @@ def test_an_input_the_row_does_not_carry_at_all_produces_no_amount() -> None:
         "max(a)",
         "round(a)",
         "round(a, 2, 3)",
+        "coalesce(a)",
+        "coalesce(a, b, c)",
     ],
 )
 def test_anything_outside_the_grammar_fails_to_load(expression: str) -> None:

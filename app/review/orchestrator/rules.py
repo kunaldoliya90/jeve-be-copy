@@ -65,6 +65,13 @@ def outcome_for(
     if any(figure.tool == "negative_scan" and figure.exception_count for figure in figures):
         reasons.append(ReviewFlag.NEGATIVE_ACCRUAL)
 
+    # --- evidence unrelated to the entry always goes to a person -----------------------
+    # A clean fail here is not "re-run the check", it is "go get the right evidence" - the
+    # same reason a negative accrual is routed to a person rather than left to read as an
+    # ordinary failure.
+    if any(figure.tool == "evidence_appropriateness" and figure.ok is False for figure in figures):
+        reasons.append(ReviewFlag.EVIDENCE_UNRELATED)
+
     if verdict is not None:
         # A model concluded. What it said counts only as far as the figures bear it out.
         checked = check_answer(check, figures, verdict, challenge)

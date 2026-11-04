@@ -59,6 +59,17 @@ def workbook(records: Records, posted: Records | None = None) -> ToolContext:
     return make_context({"calculation": (CALCULATION, records), "je_posting": (POSTING, lines)})
 
 
+def workbook_with_headers(
+    headers: tuple[str, ...], records: Records, posted: Records | None = None
+) -> ToolContext:
+    """Like ``workbook``, with a calculation table carrying extra columns - a grouping
+    dimension, say - that the standard fixture's fixed header tuple does not."""
+    lines: Records = (
+        posted if posted is not None else [["FR01", "720008", "EUR", Decimal("300.00")]]
+    )
+    return make_context({"calculation": (headers, records), "je_posting": (POSTING, lines)})
+
+
 # --------------------------------------------------------------------------- it reconciles
 
 
@@ -70,7 +81,7 @@ def test_an_entry_that_rebuilds_to_the_booked_amount_passes() -> None:
         ]
     )
 
-    paper = recalculate(ctx, spec())
+    paper, _ = recalculate(ctx, spec())
 
     assert paper.status is Status.PASS
     assert paper.recomputed_total == Decimal("300.00")
@@ -93,7 +104,7 @@ def test_the_blank_and_subtotal_rows_beneath_the_data_are_not_records() -> None:
         ]
     )
 
-    paper = recalculate(ctx, spec())
+    paper, _ = recalculate(ctx, spec())
 
     assert paper.rows_total == 2
     assert paper.recomputed_total == Decimal("300.00")
@@ -106,7 +117,7 @@ def test_the_formula_is_rendered_in_the_headers_the_preparer_wrote() -> None:
         posted=[["FR01", "720008", "EUR", Decimal("100.00")]],
     )
 
-    paper = recalculate(ctx, spec())
+    paper, _ = recalculate(ctx, spec())
 
     assert paper.basis.formula == "fte_amount + non_fte_amount"
     assert paper.basis.formula_in_headers == "fte_accrual + non_fte_accrual"
@@ -124,7 +135,7 @@ def test_an_entry_outside_tolerance_fails_and_says_by_how_much() -> None:
         posted=[["FR01", "720008", "EUR", Decimal("90.00")]],
     )
 
-    paper = recalculate(ctx, spec())
+    paper, _ = recalculate(ctx, spec())
 
     assert paper.status is Status.FAIL
     assert paper.difference == Decimal("10.00")
@@ -141,7 +152,7 @@ def test_a_difference_inside_the_agreed_percentage_is_not_a_failure() -> None:
         posted=[["FR01", "720008", "EUR", Decimal("999500.00")]],
     )
 
-    paper = recalculate(ctx, spec())
+    paper, _ = recalculate(ctx, spec())
 
     assert paper.within_tolerance is True
     assert paper.basis.tolerance_amount == Decimal("999.50")
@@ -156,7 +167,7 @@ def test_a_record_that_differs_from_its_own_stated_amount_is_cited() -> None:
         ]
     )
 
-    paper = recalculate(ctx, spec())
+    paper, _ = recalculate(ctx, spec())
 
     assert paper.citation_count == 1
     citation = paper.citations[0]
@@ -183,7 +194,7 @@ def test_both_figures_in_a_citation_are_written_at_the_declared_scale() -> None:
         posted=[["FR01", "720008", "EUR", Decimal("12556.50")]],
     )
 
-    paper = recalculate(ctx, spec())
+    paper, _ = recalculate(ctx, spec())
 
     assert paper.citations[0].why.startswith("The approved formula gives 150.00 more than the ")
     assert "12,406.50 this row states" in paper.citations[0].why
@@ -198,7 +209,7 @@ def test_an_entry_that_ties_while_a_record_does_not_is_partial_never_a_pass() ->
         ]
     )
 
-    paper = recalculate(ctx, spec())
+    paper, _ = recalculate(ctx, spec())
 
     assert paper.difference == Decimal("0.00")
     assert paper.status is Status.PARTIAL
@@ -218,7 +229,7 @@ def test_a_record_an_input_is_missing_on_is_cited_and_never_summed_as_zero() -> 
         posted=[["FR01", "720008", "EUR", Decimal("100.00")]],
     )
 
-    paper = recalculate(ctx, spec())
+    paper, _ = recalculate(ctx, spec())
 
     assert paper.rows_total == 2
     assert paper.rows_recomputed == 1
@@ -249,7 +260,7 @@ def test_a_required_input_the_workbook_does_not_carry_is_inconclusive() -> None:
         ),
     )
 
-    paper = recalculate(ctx, needs_a_rate)
+    paper, _ = recalculate(ctx, needs_a_rate)
 
     assert paper.status is Status.UNABLE_TO_VALIDATE
     assert paper.recomputed_total == Decimal(0)
@@ -272,7 +283,7 @@ def test_an_optional_input_the_workbook_does_not_carry_is_a_note_not_a_gap() -> 
         ),
     )
 
-    paper = recalculate(ctx, with_optional)
+    paper, _ = recalculate(ctx, with_optional)
 
     assert paper.status is Status.PASS
     assert any("cp is not present" in note for note in paper.notes)
@@ -287,7 +298,7 @@ def test_the_records_each_input_resolved_on_are_counted() -> None:
         posted=[["FR01", "720008", "EUR", Decimal("100.00")]],
     )
 
-    paper = recalculate(ctx, spec())
+    paper, _ = recalculate(ctx, spec())
 
     counts = {item.id: (item.rows_present, item.rows_missing) for item in paper.inputs}
     assert counts == {"fte_amount": (2, 0), "non_fte_amount": (1, 1)}
@@ -306,7 +317,7 @@ def test_only_the_debit_side_of_the_posted_entry_is_summed() -> None:
         ],
     )
 
-    paper = recalculate(ctx, spec())
+    paper, _ = recalculate(ctx, spec())
 
     assert paper.booked.total == Decimal("100.00")
     assert paper.booked.lines == 1
@@ -320,7 +331,7 @@ def test_a_booked_amount_that_cannot_be_read_is_inconclusive_not_a_pass() -> Non
         {"calculation": (CALCULATION, [["E1", Decimal("1.00"), Decimal("0.00"), Decimal("1.00")]])}
     )
 
-    paper = recalculate(ctx, spec())
+    paper, _ = recalculate(ctx, spec())
 
     assert paper.booked.total is None
     assert paper.within_tolerance is None
@@ -340,7 +351,7 @@ def test_a_control_total_the_entry_states_can_be_the_booked_side() -> None:
         facts={"je_total": Decimal("100.00")},
     )
 
-    paper = recalculate(
+    paper, _ = recalculate(
         ctx, spec(booked=BookedSpec(method=BookedMethod.STATED_FACT, fact="je_total"))
     )
 
@@ -404,7 +415,7 @@ def test_a_derived_term_is_re_performed_and_corroborated_row_by_row() -> None:
         ),
     )
 
-    paper = recalculate(ctx, with_term)
+    paper, _ = recalculate(ctx, with_term)
 
     assert paper.status is Status.PASS
     component = paper.components[0]
@@ -461,7 +472,7 @@ def test_a_derived_term_that_disagrees_reports_where_and_by_how_much() -> None:
         ),
     )
 
-    paper = recalculate(ctx, with_term)
+    paper, _ = recalculate(ctx, with_term)
 
     corroboration = paper.corroborations[0]
     assert corroboration.agrees is False
@@ -487,7 +498,7 @@ def test_the_provisional_basis_is_said_on_the_face_of_the_paper() -> None:
         posted=[["FR01", "720008", "EUR", Decimal("100.00")]],
     )
 
-    paper = recalculate(ctx, spec(provisional_basis=True))
+    paper, _ = recalculate(ctx, spec(provisional_basis=True))
 
     assert paper.basis.provisional_basis is True
     assert any("provisional" in note for note in paper.notes)
@@ -508,7 +519,7 @@ def test_a_workbook_where_nothing_reconciles_does_not_collect_a_citation_per_row
     ]
     ctx = workbook(records, posted=[["FR01", "720008", "EUR", Decimal("125250.00")]])
 
-    paper = recalculate(ctx, spec())
+    paper, _ = recalculate(ctx, spec())
 
     assert paper.rows_total == 500
     assert paper.citation_count == 500, "the count is exact"
@@ -527,9 +538,98 @@ def test_one_citation_of_every_kind_survives_the_cap() -> None:
     records.append(["E99", None, Decimal(0), Decimal(5)])
     ctx = workbook(records, posted=[["FR01", "720008", "EUR", Decimal("780.00")]])
 
-    paper = recalculate(ctx, spec())
+    paper, _ = recalculate(ctx, spec())
 
     kinds = {citation.kind for citation in paper.citations}
     assert DiscrepancyKind.STATED_DIFFERS in kinds
     assert DiscrepancyKind.INPUT_MISSING in kinds
     assert len(paper.citations) <= CITATION_CAP
+
+
+# --------------------------------------------------------- the full row set, not the sample
+
+
+def test_every_record_is_kept_not_just_the_cited_ones() -> None:
+    """``rows`` carries the whole pass, uncapped - the point of it existing beside the
+    paper's own citations, which are deliberately capped at ``CITATION_CAP``."""
+    records: Records = [
+        [f"E{index}", Decimal(index), Decimal(0), Decimal(index + 1000)] for index in range(1, 40)
+    ]
+    ctx = workbook(records, posted=[["FR01", "720008", "EUR", Decimal("780.00")]])
+
+    _, rows = recalculate(ctx, spec())
+
+    assert len(rows) == 39
+    assert {row.row for row in rows} == set(range(2, 41))
+    assert all(row.kind is DiscrepancyKind.STATED_DIFFERS for row in rows)
+
+
+def test_a_row_that_agrees_is_kept_with_no_kind() -> None:
+    """The one state a citation never carries at all: agreement is not an exception."""
+    ctx = workbook(
+        [
+            ["E1", Decimal("100.00"), Decimal("0.00"), Decimal("100.00")],
+            ["E2", Decimal("150.00"), Decimal("50.00"), Decimal("200.00")],
+        ]
+    )
+
+    _, rows = recalculate(ctx, spec())
+
+    assert len(rows) == 2
+    assert all(row.kind is None for row in rows)
+    assert all(row.difference == Decimal("0.00") for row in rows)
+
+
+def test_a_row_missing_an_input_is_kept_with_no_recomputed_amount() -> None:
+    ctx = workbook(
+        [
+            ["E1", Decimal("100.00"), Decimal("0.00"), Decimal("100.00")],
+            ["E2", None, Decimal("50.00"), Decimal("200.00")],
+        ]
+    )
+
+    _, rows = recalculate(ctx, spec())
+
+    missing = next(row for row in rows if row.row == 3)
+    assert missing.kind is DiscrepancyKind.INPUT_MISSING
+    assert missing.recomputed is None
+
+
+def test_a_row_carries_whichever_grouping_dimensions_the_table_binds() -> None:
+    """A conventional, small set of meanings - see ``_GROUP_MEANINGS`` - not a per-type
+    declaration, so a working that happens to carry a cost centre groups by it for free."""
+    headers = (*CALCULATION, "cost_center")
+    ctx = workbook_with_headers(
+        headers,
+        [
+            ["E1", Decimal("100.00"), Decimal("0.00"), Decimal("100.00"), "CC100"],
+            ["E2", Decimal("150.00"), Decimal("50.00"), Decimal("200.00"), "CC200"],
+        ],
+    )
+
+    _, rows = recalculate(ctx, spec())
+
+    assert {row.group.get("cost_center") for row in rows} == {"CC100", "CC200"}
+
+
+def test_a_derived_term_is_cited_on_each_row_it_evaluated_on() -> None:
+    ctx = workbook(
+        [
+            ["E1", Decimal("100.00"), Decimal("0.00"), Decimal("100.00")],
+        ]
+    )
+    with_term = spec(
+        derive=(
+            DerivedTermSpec(
+                id="rtt_amount",
+                expression="fte_amount",
+                description="FTE amount, restated",
+            ),
+        )
+    )
+
+    _, rows = recalculate(ctx, with_term)
+
+    assert len(rows) == 1
+    terms = {term.id: term.value for term in rows[0].terms}
+    assert terms == {"rtt_amount": Decimal("100.00")}

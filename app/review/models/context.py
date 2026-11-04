@@ -253,6 +253,35 @@ class BookedSpec(_Frozen):
     )
 
 
+class RecalcExplainedStepSpec(_Frozen):
+    """One step of the formula, walked through in words, against the same fixed example.
+
+    ``example`` is arithmetic over the one record ``RecalcExplainedSpec`` names, not a
+    template filled in per review: the whole point is a reader can check it with a
+    calculator, which a number that changes between reviews would not let them do.
+    """
+
+    label: str = Field(..., min_length=1, description="What this step establishes")
+    detail: str = Field(default="", description="How it is worked out, in the business's words")
+    example: str = Field(default="", description="That step, carried out on the fixed example")
+
+
+class RecalcExplainedSpec(_Frozen):
+    """The formula walked through in plain language, for a reader who has never seen it.
+
+    The business's own words, carried verbatim - the same convention ``worked_example``
+    already follows, and deliberately a fixed illustration rather than anything read from a
+    particular review: a new review must never change what this section says, or a reader
+    comparing two reports side by side would wonder why the explanation moved.
+    """
+
+    intro: str = Field(default="")
+    context: str = Field(default="", description="What the two legs of the formula each mean")
+    steps: tuple[RecalcExplainedStepSpec, ...] = Field(default=())
+    summary: str = Field(default="", description="The whole thing, in one sentence")
+    caveats: tuple[str, ...] = Field(default=(), description="What a reader should be told")
+
+
 class RecalculationSpec(_Frozen):
     """The approved basis for regenerating this entry's value, owned by the business.
 
@@ -313,6 +342,9 @@ class RecalculationSpec(_Frozen):
     worked_example: str = Field(
         default="", description="The business's own worked example, shown beside the formula"
     )
+    explained: RecalcExplainedSpec | None = Field(
+        default=None, description="The formula walked through in plain language, step by step"
+    )
 
     @property
     def names(self) -> frozenset[str]:
@@ -345,6 +377,74 @@ class RecalculationSpec(_Frozen):
         return self
 
 
+class RowIdentitySpec(_Frozen):
+    """One arithmetic identity the business says must hold on every record.
+
+    ``expression`` is written over the **column meanings** the JE type's table declares -
+    ``max(cp_earned - cp_taken, 0)`` - and ``against`` names the column holding the
+    workbook's own answer for the same quantity. The row-level re-performances were Python
+    until this existed, which meant the business could read its own arithmetic only by
+    reading code; now a leave convention that differs by country is a YAML edit.
+
+    The vocabulary is deliberately meanings rather than the declared input ids the entry
+    recalculation uses. An identity is one line of arithmetic over columns a reviewer can
+    point at, and giving each column a second name would buy nothing but a mapping to keep.
+    """
+
+    id: str = Field(..., min_length=1)
+    expression: str = Field(..., min_length=1, description="Over the table's column meanings")
+    against: str = Field(
+        ..., min_length=1, description="The meaning holding the workbook's own answer"
+    )
+    label: str = Field(
+        ...,
+        min_length=1,
+        description="What was compared, in the business's words. It is what the figure says",
+    )
+    tolerance: Decimal | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Per-row headroom. None uses the business-wide tolerance. A product rounded to "
+            "the currency's scale before it is stored needs a cent of room; a sum of two "
+            "stored amounts does not."
+        ),
+    )
+    min_tie_rate: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Below this share of agreeing rows the identity is reported as unable to "
+            "validate rather than as thousands of exceptions: an identity that fails on "
+            "nearly every row is the wrong convention for this workbook, not a workbook "
+            "where every row is wrong, and a confident false finding is the worse outcome."
+        ),
+    )
+
+
+class ReperformanceSpec(_Frozen):
+    """The record-level arithmetic for this entry type, as the business states it."""
+
+    table: str = Field(default="calculation", description="The working the records are read from")
+    record_key: str = Field(
+        default="employee_ref",
+        description="The meaning that separates a record from the rows beneath the data",
+    )
+    identities: tuple[RowIdentitySpec, ...] = Field(..., min_length=1)
+
+    def identity(self, identity_id: str) -> RowIdentitySpec | None:
+        return next((item for item in self.identities if item.id == identity_id), None)
+
+    @model_validator(mode="after")
+    def _ids_are_unique(self) -> "ReperformanceSpec":
+        ids = [item.id for item in self.identities]
+        duplicates = sorted({name for name in ids if ids.count(name) > 1})
+        if duplicates:
+            raise ValueError(f"reperformance declares {duplicates} more than once")
+        return self
+
+
 class JETypeContext(_Frozen):
     """One JE type, loaded from ``context/je_types/<id>.yaml``."""
 
@@ -364,6 +464,13 @@ class JETypeContext(_Frozen):
 
     discriminators: DiscriminatorSpec | None = Field(default=None)
     methodology: MethodologySpec | None = Field(default=None)
+    reperformance: ReperformanceSpec | None = Field(
+        default=None,
+        description=(
+            "The record-level identities the `reperform` tool runs. None for a JE type that "
+            "states none, and then no row-level re-performance runs at all."
+        ),
+    )
     recalculation: RecalculationSpec | None = Field(
         default=None,
         description=(
@@ -395,6 +502,36 @@ class JETypeContext(_Frozen):
         missing = set(self.areas) - covered
         if missing:
             raise ValueError(f"areas with no check in {self.id!r}: {sorted(missing)}")
+        return self
+
+    @model_validator(mode="after")
+    def _identities_read_columns_this_type_declares(self) -> "JETypeContext":
+        """Every identity must be expressed over meanings the working actually asks for.
+
+        Checked here rather than on ``ReperformanceSpec`` because this is the only object
+        that knows both the arithmetic and the tables, and a misspelled meaning would
+        otherwise be a term that silently evaluates to nothing on every row - an identity
+        reporting a clean workbook as unable to validate, which looks like a finding.
+        """
+        if self.reperformance is None:
+            return self
+        table = self.tables.get(self.reperformance.table)
+        if table is None:
+            raise ValueError(
+                f"reperformance reads table {self.reperformance.table!r}, "
+                f"which {self.id!r} does not declare"
+            )
+        meanings = frozenset(table.meanings)
+        for identity in self.reperformance.identities:
+            try:
+                compile_formula(identity.expression, meanings)
+            except FormulaError as exc:
+                raise ValueError(f"identity {identity.id!r}: {exc}") from exc
+            if identity.against not in meanings:
+                raise ValueError(
+                    f"identity {identity.id!r} compares against {identity.against!r}, which "
+                    f"{self.reperformance.table!r} does not declare"
+                )
         return self
 
     @model_validator(mode="after")

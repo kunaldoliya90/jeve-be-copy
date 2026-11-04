@@ -19,10 +19,13 @@ rather than a half-written one that parses and lies.
 import json
 import logging
 import threading
-from datetime import UTC, datetime
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Final
 
+from review.models.recalculation import RecalcRow
 from review.models.result import ReviewResult
 
 IndexRow = dict[str, object]
@@ -35,6 +38,10 @@ REVIEWS_DIR: Final = "reviews"
 INDEX_FILE: Final = "index.json"
 REUSE_FILE: Final = "reuse_index.json"
 _TEMP_SUFFIX: Final = ".partial"
+_ROWS_SUFFIX: Final = ".rows.json"
+"""A review's full recalculation row set, beside its record rather than inside it: the main
+record is read on every page view, and a reviewer browsing the grid is a different, much
+heavier read that most page views never make."""
 
 
 class ReviewStore:
@@ -73,11 +80,23 @@ class ReviewStore:
                 "review_id": result.review_id,
                 "file_name": file_name,
                 "je_type": result.je_type,
+                "je_type_variant": result.entry.je_type_variant if result.entry else None,
+                "period": result.entry.period if result.entry else None,
                 "status": result.status,
                 "score": result.score.total if result.score else None,
                 "band": result.score.band if result.score else None,
                 "provisional": result.score.provisional if result.score else False,
                 "created_at": result.created_at.isoformat(),
+                # The trend check's own baseline: the posted amount where it could be read,
+                # the recomputed one otherwise. Carried on the index, rather than read from
+                # the full record on every later review, so a baseline costs no more than a
+                # listing does - the index is already read for every page of the review list.
+                "booked_total": _decimal_str(
+                    result.recalculation.booked.total if result.recalculation else None
+                ),
+                "recomputed_total": _decimal_str(
+                    result.recalculation.recomputed_total if result.recalculation else None
+                ),
             }
             _write_atomic(self._root / INDEX_FILE, index)
 
@@ -87,6 +106,42 @@ class ReviewStore:
                 reuse = self._reuse_index()
                 reuse[reuse_key] = result.review_id
                 _write_atomic(self._root / REUSE_FILE, reuse)
+
+    def write_recalc_rows(self, review_id: str, rows: Sequence[RecalcRow]) -> None:
+        """Store every record the recalculation walked. Refuses to overwrite, like ``write``.
+
+        A sibling file rather than a field on the main record: the record is read on every
+        page view of a review, and the full row set is a browse only some of those views
+        ever make. Keeping them apart means that read stays the size it has always been.
+        """
+        path = self._records / f"{review_id}{_ROWS_SUFFIX}"
+        if path.exists():
+            raise FileExistsError(f"recalculation rows for {review_id} are already stored")
+        _write_atomic(path, [json.loads(row.model_dump_json()) for row in rows])
+
+    def read_recalc_rows(self, review_id: str) -> list[RecalcRow] | None:
+        """Every record of a stored recalculation, or ``None`` when there is no such file.
+
+        ``None`` here means "nothing was ever recalculated for this review" - the ordinary
+        case for a JE type that states no formula - which is a different fact from an empty
+        list, meaning the recalculation ran over zero records.
+        """
+        path = self._records / f"{review_id}{_ROWS_SUFFIX}"
+        if not path.is_file():
+            return None
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.error("recalculation rows for %s could not be read: %s", review_id, exc)
+            return None
+        if not isinstance(raw, list):
+            logger.error("recalculation rows for %s are not a list", review_id)
+            return None
+        try:
+            return [RecalcRow.model_validate(item) for item in raw]
+        except ValueError as exc:
+            logger.error("recalculation rows for %s could not be parsed: %s", review_id, exc)
+            return None
 
     def delete(self, review_id: str) -> bool:
         """Remove one stored review. Returns False when there was nothing to remove.
@@ -123,6 +178,13 @@ class ReviewStore:
                 path.unlink()
             except OSError as exc:  # pragma: no cover - a permissions or locking fault
                 logger.error("stored review %s could not be removed: %s", review_id, exc)
+
+        rows_path = self._records / f"{review_id}{_ROWS_SUFFIX}"
+        if rows_path.is_file():
+            try:
+                rows_path.unlink()
+            except OSError as exc:  # pragma: no cover - a permissions or locking fault
+                logger.error("recalculation rows for %s could not be removed: %s", review_id, exc)
 
         removed = existed or indexed is not None
         if removed:
@@ -167,6 +229,56 @@ class ReviewStore:
             else {}
         )
 
+    def trend_baseline(
+        self,
+        *,
+        je_type: str,
+        variant: str | None,
+        before: datetime,
+        months: int,
+        exclude_period: str | None = None,
+    ) -> list[Decimal]:
+        """Prior periods' totals for this JE type, read off the index alone.
+
+        One review per prior period, oldest and newest included, read from the listing
+        index rather than the full stored record: the index already carries everything a
+        baseline needs, and a review this reads is otherwise immutable, so there is nothing
+        here a full read would make more current.
+
+        Matched on variant only when a variant is given: a type with no variants of its own
+        would otherwise compare against nothing, every time, forever. ``exclude_period``
+        keeps a second review of the *same* fiscal period - a re-upload, or the same file
+        identified two different ways - from reading as its own prior period: two reviews of
+        FY26P07 are one data point for a trend, not two.
+
+        Defined ahead of ``list()`` below on purpose: once that method's own name is bound
+        in this class body, a bare ``list[...]`` written after it resolves to that method
+        rather than to the builtin.
+        """
+        since = before - timedelta(days=30 * max(months, 1))
+        with self._lock:
+            index = self._read(INDEX_FILE)
+
+        amounts: list[Decimal] = []
+        for row in index.values():
+            if row.get("je_type") != je_type:
+                continue
+            if variant is not None and row.get("je_type_variant") != variant:
+                continue
+            if exclude_period is not None and row.get("period") == exclude_period:
+                continue
+            if row.get("status") not in ("completed", "needs_review"):
+                continue
+            created_at = _parse_timestamp(row.get("created_at"))
+            if created_at is None or not since <= created_at < before:
+                continue
+            total = _to_decimal(row.get("booked_total"))
+            if total is None:
+                total = _to_decimal(row.get("recomputed_total"))
+            if total is not None:
+                amounts.append(total)
+        return amounts
+
     def list(
         self, *, limit: int = 25, cursor: str | None = None
     ) -> tuple[list[IndexRow], str | None]:
@@ -206,3 +318,28 @@ def _write_atomic(path: Path, payload: object) -> None:
 def utc_now() -> datetime:
     """One clock for the whole harness, always timezone-aware."""
     return datetime.now(UTC)
+
+
+def _decimal_str(value: Decimal | None) -> str | None:
+    """How a total is written to the index. ``None`` stays ``None``, never ``"None"``."""
+    return None if value is None else str(value)
+
+
+def _to_decimal(value: object) -> Decimal | None:
+    """A total read back off the index. Never raises on a row an older build wrote."""
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except InvalidOperation:
+        return None
+
+
+def _parse_timestamp(value: object) -> datetime | None:
+    """A ``created_at`` read back off the index. ``None`` for anything that is not one."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None

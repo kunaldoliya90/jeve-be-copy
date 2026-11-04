@@ -7,7 +7,7 @@ something that can be evaluated two million times without surprises.
 Three decisions hold it together.
 
 **It is parsed, never evaluated as Python.** No ``eval``, no ``exec``, no name lookup into
-anything but the row's own inputs. The grammar is four operators, four functions, numeric
+anything but the row's own inputs. The grammar is four operators, five functions, numeric
 literals and parentheses, and a formula that uses anything else fails to load - at startup,
 naming the JE type file, rather than halfway through somebody's review.
 
@@ -15,6 +15,8 @@ naming the JE type file, rather than halfway through somebody's review.
 ``None`` is ``None``. A row an input does not resolve on therefore produces no amount at all,
 which is what lets the engine count it as incomplete instead of recomputing it as though the
 input were zero. Division by a zero or absent denominator is the same thing: no answer.
+``coalesce`` is the one deliberate exception, and only because a blank cell is sometimes the
+business's own answer rather than a gap: see its note below.
 
 **It compiles to closures.** The parse tree is turned into nested callables once, so
 evaluating a row costs the arithmetic and a few function calls rather than a walk over an
@@ -59,12 +61,20 @@ _FUNCTIONS: Final[dict[str, tuple[int, int]]] = {
     "min": (2, 8),
     "abs": (1, 1),
     "round": (2, 2),
+    "coalesce": (2, 2),
 }
 """The only functions a formula may call, with how many arguments each takes.
 
-Deliberately four. ``max`` is the floor the business applies to a leave balance, ``min`` its
-cap, ``abs`` the sign convention, and ``round`` the currency's own scale. Anything beyond
-arithmetic belongs in the JE type's rules, not in an expression nobody can test.
+``max`` is the floor the business applies to a leave balance, ``min`` its cap, ``abs`` the
+sign convention, ``round`` the currency's own scale. ``coalesce(value, default)`` is the one
+deliberate hole in "a missing input propagates": verified on both sample workbooks that one
+leg of a two-leg provision, typed independently by the payroll extract, is blank in exactly
+the periods that leg does not apply, and the business's own stated total simply omits it
+rather than reading as incomplete - so folding that blank to zero here is reproducing what
+the business already does, not assuming it. It is written explicitly in the business's own
+expression for that reason: the alternative, this behaviour hidden inside the engine for
+every formula, is the thing ``None`` propagating everywhere else exists to prevent. Anything
+beyond these five belongs in the JE type's rules, not in an expression nobody can test.
 """
 
 
@@ -364,9 +374,20 @@ def _rounded(args: list[Term]) -> Term:
     return term
 
 
+def _coalesce(args: list[Term]) -> Term:
+    value_of, default_of = args[0], args[1]
+
+    def term(row: Row) -> Decimal | None:
+        value = value_of(row)
+        return value if value is not None else default_of(row)
+
+    return term
+
+
 _CALLS: Final[dict[str, Callable[[list[Term]], Term]]] = {
     "max": _maximum,
     "min": _minimum,
+    "coalesce": _coalesce,
     "abs": _absolute,
     "round": _rounded,
 }

@@ -71,6 +71,24 @@ class ProgressEvent(BaseModel):
     detail: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
 
 
+class FigureSampleView(BaseModel):
+    """One worked example behind a check's conclusion: a row the check actually looked at.
+
+    Reads whichever of these a tool's sample dict carries - a row-level re-performance has
+    all five, a tool comparing something else (an account, a posting date) has only some -
+    so a field absent from the tool's own sample is ``None`` here rather than forcing a
+    shape onto every tool. Never an employee identifier, same as the figure it comes from.
+    """
+
+    row: int | None = Field(default=None, description="Row number, never a name")
+    cell: str | None = Field(default=None, description='Cell ref, e.g. "GPAY!AH9"')
+    expected: Decimal | None = Field(
+        default=None, description="What re-performing the arithmetic gives"
+    )
+    actual: Decimal | None = Field(default=None, description="What the workbook states")
+    difference: Decimal | None = Field(default=None, description="expected minus actual")
+
+
 class CheckView(BaseModel):
     """One check as the report shows it."""
 
@@ -85,6 +103,10 @@ class CheckView(BaseModel):
     exception_count: int = Field(default=0, ge=0)
     financial_impact: Decimal | None = Field(default=None)
     cells: list[str] = Field(default_factory=list, description='Cell refs, e.g. "GPAY!AL35"')
+    samples: list[FigureSampleView] = Field(
+        default_factory=list,
+        description="Worst-first, the rows behind the conclusion - same ones cells is made from",
+    )
 
 
 class AreaView(BaseModel):

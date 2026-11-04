@@ -54,6 +54,20 @@ conclusion comes from a tool or a routing rule.
   instead. The engine runs once per review, in the executor, and hands back both the work
   paper and the figures the check's status is set from, so nothing downstream treats it
   specially - 37,613 records in about 200 ms.
+- Step 13c then **examines the formulas the workbook itself applies**
+  (`recalc/formula_audit.py`), which is the one question a right number cannot answer. For
+  every column the business declares arithmetic for it reports a column that is not
+  calculated at all, cells that disagree with one another, a constant typed over a formula,
+  and references resolving to different columns than the approved expression reads. The last
+  closes a real gap: a column built from the wrong columns produces the right total on every
+  record where the missing input happens to be zero, so the entry reconciles and every other
+  check passes. Formulas are read, never evaluated - the comparison is of which columns are
+  read rather than of the expression's shape, because `=B+C` and `=SUM(B:C)` are the same
+  arithmetic.
+- The **record-level identities** are the business's as well (`reperformance.identities`):
+  each is one line of arithmetic over the working's columns with its own per-row tolerance,
+  and a single `reperform` tool evaluates all of them. Three tools whose arithmetic was
+  Python were replaced by it.
 - Step 18 also assembles a **category split work paper**: the working re-added row by row and
   divided by the classes its own classification column holds, each column tied against the
   total the file states above its header, the formula behind each column rewritten in the

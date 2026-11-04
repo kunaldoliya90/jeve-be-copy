@@ -29,6 +29,7 @@ reference, never a name - the same rule as the category split work paper beside 
 
 from decimal import Decimal
 from enum import StrEnum
+from typing import Final
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
@@ -91,6 +92,84 @@ class BookedMethod(StrEnum):
     """A control total the entry states about itself, read at step 13."""
 
 
+class FormulaFault(StrEnum):
+    """What is wrong with a formula the workbook applies, as far as code can establish it.
+
+    None of these is read off the formula's *meaning* - nothing here evaluates Excel or
+    judges what a formula was trying to do. Each is a structural fact about the cells: the
+    column is not calculated, its cells disagree with each other, one was typed over, or it
+    reads different columns from the ones the approved arithmetic reads.
+    """
+
+    NOT_CALCULATED = "not_calculated"
+    """No formula in the column at all: the figure is stated in this file, not computed."""
+    INCONSISTENT = "inconsistent"
+    """The cells of one column do not share a formula. Somebody edited part of a column."""
+    TYPED_OVER = "typed_over"
+    """A constant sitting in a column the rest of which calculates itself."""
+    DIFFERENT_INPUTS = "different_inputs"
+    """The formula reads different columns from the ones the approved arithmetic reads.
+
+    The finding this whole audit exists for. A column that sums the wrong things can still
+    produce a figure that ties - it is only wrong when somebody checks what it is made of -
+    so this is the one fault that is invisible to every other check in the harness.
+    """
+    UNREADABLE = "unreadable"
+    """The format carries no formulas, so nothing about them could be established."""
+
+    @property
+    def is_defect(self) -> bool:
+        """Whether this is something somebody did wrong, or a limit of the evidence.
+
+        The distinction decides what ``formula_defects_can_fail_check`` is allowed to fail.
+        A column that is not calculated in this file is the **normal** case for these
+        entries - the figures arrive from a payroll extract, and all three sample workbooks
+        are like that - and a format carrying no formulas is a fact about the file. Neither
+        is a defect, and neither may fail a check: treating every finding as blocking would
+        have failed every review on every sample workbook the moment the business turned
+        that switch on, which is a landmine rather than a setting.
+        """
+        return self in _DEFECTS
+
+
+_DEFECTS: Final = frozenset(
+    {FormulaFault.DIFFERENT_INPUTS, FormulaFault.INCONSISTENT, FormulaFault.TYPED_OVER}
+)
+"""The faults that are somebody's mistake rather than a limit of the evidence."""
+
+
+class FormulaFinding(BaseModel):
+    """One fault in the workbook's own arithmetic, in the form a reviewer can act on.
+
+    ``cell`` is where to open the file. ``formula`` is what is written there, and
+    ``in_headers`` is the same thing with each reference replaced by the header of the column
+    it reads, so a reader never has to decode a column letter. ``expected`` is the approved
+    arithmetic in the same form, where the business has declared it - without that there is
+    nothing to be different *from*, and the finding says only what was observed.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    fault: FormulaFault
+    sheet: str = Field(default="")
+    column: str = Field(default="", description="The column letter the fault is in")
+    header: str = Field(default="", description="Its header, as the preparer wrote it")
+    cell: str = Field(default="", description='Where to open the file, e.g. "AH2461"')
+    formula: str = Field(default="", description="As written in that cell")
+    in_headers: str = Field(
+        default="", description="The same formula with each reference replaced by its header"
+    )
+    expected: str = Field(
+        default="",
+        description="The approved arithmetic in the same form. Empty where none is declared",
+    )
+    rows_affected: int = Field(default=0, ge=0)
+    rows_checked: int = Field(default=0, ge=0, description="Records the column was read over")
+    why: str = Field(
+        default="", description="What it means for the review, in a sentence written by code"
+    )
+
+
 class CitedValue(BaseModel):
     """One number a citation rests on, with where it was read from.
 
@@ -140,6 +219,88 @@ class RecalcCitation(BaseModel):
     )
     missing: tuple[str, ...] = Field(
         default=(), description="Ids of the inputs that did not resolve on this row"
+    )
+
+
+class RelatedRecalcCheck(BaseModel):
+    """One other check on the same table, in the entry recalculation's own citation shape.
+
+    Built once, from the same evidence pack the rest of step 16 reads - never re-derived or
+    re-judged here. ``citations`` reuses ``RecalcCitation`` so the reader sees the identical
+    Row/Cell/Recomputed/Stated/Difference shape Block C already uses, rather than a second
+    table format for what is, to a reviewer, the same kind of finding.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    check_id: str = Field(..., min_length=1)
+    label: str = Field(default="", description="The check's own question, for a reader's header")
+    summary: str = Field(default="", description="The check's own conclusion, written by code")
+    citations: tuple[RecalcCitation, ...] = Field(
+        default=(),
+        description="Worst first, capped the same way this check capped them for itself",
+    )
+    citation_count: int = Field(
+        default=0, ge=0, description="Rows this check found differing, in full"
+    )
+
+
+class RowFlag(BaseModel):
+    """One row also cited by a different check that reads this same table.
+
+    Merged in by row number from that check's own (already worst-first, capped) citations -
+    see ``review.recalc.rows_query.merge_related_flags``. A row with no flag here may still
+    differ on that check if its citation list was capped before reaching this row: the
+    related check's own ``citation_count`` on ``RelatedRecalcCheck``, not this field, is
+    where the full count lives.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    check_id: str = Field(..., min_length=1)
+    label: str = Field(default="")
+    cell: str = Field(default="")
+    expected: Decimal | None = Field(default=None)
+    actual: Decimal | None = Field(default=None)
+    difference: Decimal | None = Field(default=None)
+    why: str = Field(default="")
+
+
+class RecalcRow(BaseModel):
+    """One record of the full pass - not just the worst twelve.
+
+    ``RecalcCitation`` above exists to be printed, so the engine keeps only a bounded,
+    worst-first sample of them (see ``recalc/engine.py``). This exists to be *browsed*: every
+    record, kept, so a reviewer can page through all of them, group by cost centre or
+    classification, and open any one row's own working - which only reaches this grid because
+    nothing here is discarded during the pass.
+
+    The same naming rule as the rest of this work paper applies, and for the same reason: a
+    row number and cell references, never an employee reference.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    row: int = Field(..., ge=1)
+    group: dict[str, str] = Field(
+        default_factory=dict,
+        description="Grouping dimension -> its value on this row, e.g. {'cost_center': 'CC100'}",
+    )
+    recomputed: Decimal | None = Field(default=None)
+    stated: Decimal | None = Field(default=None)
+    stated_cell: str = Field(default="")
+    difference: Decimal | None = Field(default=None)
+    difference_pct: float | None = Field(default=None)
+    kind: DiscrepancyKind | None = Field(
+        default=None, description="None when the row agrees within tolerance"
+    )
+    inputs: tuple[CitedValue, ...] = Field(default=())
+    terms: tuple[CitedValue, ...] = Field(
+        default=(), description="Each derived term's own value on this row, same shape as an input"
+    )
+    flags: tuple[RowFlag, ...] = Field(
+        default=(),
+        description="Citations from other checks reading this same table, merged in by row",
     )
 
 
@@ -232,6 +393,33 @@ class BookedAmount(BaseModel):
     )
 
 
+class RecalcExplainedStep(BaseModel):
+    """One step of the formula, walked through in words, against the same fixed example."""
+
+    model_config = ConfigDict(frozen=True)
+
+    label: str = Field(..., min_length=1, description="What this step establishes")
+    detail: str = Field(default="", description="How it is worked out, in the business's words")
+    example: str = Field(default="", description="That step, carried out on the fixed example")
+
+
+class RecalcExplained(BaseModel):
+    """The formula walked through in plain language, for a reader who has never seen it.
+
+    Carried verbatim from the JE type file - the same convention ``worked_example`` already
+    follows. A fixed illustration rather than anything measured from this particular review,
+    so it reads the same on every review of this entry type.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    intro: str = Field(default="")
+    context: str = Field(default="", description="What the two legs of the formula each mean")
+    steps: tuple[RecalcExplainedStep, ...] = Field(default=())
+    summary: str = Field(default="", description="The whole thing, in one sentence")
+    caveats: tuple[str, ...] = Field(default=(), description="What a reader should be told")
+
+
 class RecalcBasis(BaseModel):
     """What was recalculated, under which rules. The audit trail of the work paper.
 
@@ -290,6 +478,9 @@ class RecalcBasis(BaseModel):
     )
     worked_example: str = Field(
         default="", description="The business's own worked example of this formula"
+    )
+    explained: RecalcExplained | None = Field(
+        default=None, description="The formula walked through in plain language, step by step"
     )
     provisional_basis: bool = Field(
         default=False,
@@ -352,6 +543,25 @@ class EntryRecalculation(BaseModel):
         description="Worst first, capped for reading. ``citation_count`` is the full number",
     )
     citation_count: int = Field(default=0, ge=0, description="Rows that did not reconcile, in full")
+    formula_findings: tuple[FormulaFinding, ...] = Field(
+        default=(),
+        description=(
+            "Faults in the workbook's own arithmetic, found after the rebuild: a column "
+            "that is not calculated, one whose cells disagree with each other, a constant "
+            "typed over a formula, or a formula reading different columns from the approved "
+            "one. The last of those is the only fault in the harness that a figure which "
+            "ties cannot hide."
+        ),
+    )
+    formula_columns_audited: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Columns whose formulas were examined: every column the business declares "
+            "arithmetic for, plus the one the booked amount is read from. Zero means the "
+            "audit could not run, which is not the same as finding nothing wrong."
+        ),
+    )
     notes: tuple[str, ...] = Field(
         default=(),
         description=(
@@ -372,3 +582,13 @@ class EntryRecalculation(BaseModel):
     def ties(self) -> bool:
         """The entry regenerated to within tolerance, over every record."""
         return self.within_tolerance is True and self.complete
+
+    related_checks: tuple[RelatedRecalcCheck, ...] = Field(
+        default=(),
+        description=(
+            "Other checks that read this same table, surfaced beside the entry-level "
+            "comparison above. A different formula is a different question, never merged "
+            "into recomputed_total/difference above - but a reviewer reading 'the records "
+            "rebuilt' is owed every other arithmetic finding on these same records."
+        ),
+    )

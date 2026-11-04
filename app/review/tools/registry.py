@@ -16,16 +16,18 @@ from review.tools.entry import (
     PIIScanTool,
     ReversalCheckTool,
 )
+from review.tools.evidence_appropriateness import EvidenceAppropriatenessTool
 from review.tools.methodology import MethodologyDriftTool
 from review.tools.recalculation import RecalcEntryTotalTool
+from review.tools.reperform import ReperformTool
 from review.tools.reperformance import (
     ClassificationCheckTool,
     NegativeScanTool,
     PopulationReconcileTool,
-    RecalcAccrualTool,
-    RecalcLeaveBalanceTool,
+    RttBalanceReperformTool,
 )
-from review.tools.salary import RecalcSalaryPerDayTool, SalaryValidateTool
+from review.tools.salary import SalaryValidateTool
+from review.tools.trend import TrendCheckTool
 
 _TOOLS: Final[tuple[BaseTool, ...]] = (
     # arithmetic on the posted entry
@@ -34,12 +36,11 @@ _TOOLS: Final[tuple[BaseTool, ...]] = (
     RollupChainTool(),
     # re-performance, row by row
     RecalcEntryTotalTool(),
-    RecalcAccrualTool(),
-    RecalcLeaveBalanceTool(),
+    ReperformTool(),
     ClassificationCheckTool(),
     PopulationReconcileTool(),
     NegativeScanTool(),
-    RecalcSalaryPerDayTool(),
+    RttBalanceReperformTool(),
     SalaryValidateTool(),
     # the entry, its evidence and its hygiene
     AccountMappingTool(),
@@ -49,6 +50,9 @@ _TOOLS: Final[tuple[BaseTool, ...]] = (
     FormulaHealthTool(),
     PIIScanTool(),
     MethodologyDriftTool(),
+    # Both run one step apart from the rest of the plan - see their own modules.
+    EvidenceAppropriatenessTool(),
+    TrendCheckTool(),
 )
 
 TOOLS: Final[dict[str, BaseTool]] = {tool.name: tool for tool in _TOOLS}

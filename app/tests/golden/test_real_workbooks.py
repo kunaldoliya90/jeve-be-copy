@@ -20,7 +20,7 @@ from review.context.binder import bind_sheet_map
 from review.context.loader import ContextLoader
 from review.extract.structure_context import build_structure_context, layout_fingerprint
 from review.intake.gatekeeper import validate_upload
-from review.models.recalculation import EntryRecalculation
+from review.models.recalculation import EntryRecalculation, FormulaFault
 from review.models.split_summary import SplitSummary
 from review.models.verdicts import Status
 from review.models.workbook import WorkbookProfile
@@ -428,10 +428,29 @@ BOOKED = {
 }
 """What each entry actually posts, summed from the debit side of its own posting tab.
 
-Read off the files. These are also, to the cent, what the approved formula rebuilds from the
-employee rows of three differently laid out workings - two French GPAY sheets a row apart and
-a global model on a tab called DENT with a quarter of the columns. Nothing about any of the
-three is configured anywhere, which is the property this section exists for.
+Read off the files, independent of the formula entirely.
+"""
+
+RECOMPUTED = {
+    "236264.xlsx": Decimal("28672591.21"),
+    "305800.xlsx": Decimal("27905812.63"),
+}
+"""What the French formula (CP provision plus a twelfth of the RTT accrual, version 9)
+rebuilds. Not exactly ``BOOKED``: rounding each record's twelfth of its RTT accrual to the
+cent before summing leaves a few cents of dust on 236264.xlsx (-0.03, every row's own
+difference still inside the 0.01 row tolerance, so nothing is cited for it) and 305800.xlsx
+is short the two employees with no CP or RTT data at all (-0.01; see
+``test_every_employee_row_is_rebuilt_or_named_as_incomplete``). Both are comfortably inside
+the business's entry-level tolerance, widened from 0.1% to 1% (2026-11-04) specifically for
+the headroom this rounding dust needs on a smaller entry of this type than these two.
+
+935348.xlsb is not here: the global MSVacation model carries neither ``cp_provision`` nor
+``rtt_accrual`` - that convention is French-specific - so its entry cannot be recalculated
+under this formula at all. See ``test_the_global_workbook_cannot_be_recalculated``. Version 8
+and earlier used ``fte_accrual + non_fte_accrual`` instead, which both the French and the
+global model carry, and reproduced all three entries to the cent; the business asked for the
+CP-provision figure to be the headline instead (2026-11-04), trading that universal coverage
+away on purpose - the FTE/non-FTE split still corroborates below, just no longer decisively.
 """
 
 
@@ -450,47 +469,78 @@ def _recalculation(
         data=data,
         sheet_map=binding.sheet_map,
         rules=loader.rules,
-        je_type_args={"recalculation": spec},
+        defects=measured.defects,
+        formula_shapes=measured.formula_shapes,
+        je_type_args={
+            "recalculation": spec,
+            "reperformance": loader.je_type(JE_TYPE).reperformance,
+        },
     )
-    return recalculate(ctx, spec)
+    paper, _ = recalculate(ctx, spec)
+    return paper
 
 
-@pytest.mark.parametrize("name", ALL)
-def test_the_entry_rebuilds_to_the_amount_that_was_posted(
+@pytest.mark.parametrize("name", XLSX)
+def test_the_entry_rebuilds_close_to_the_amount_that_was_posted(
     name: str,
     sample_data: Callable[[str], WorkbookData],
     sample_profile: Callable[[str], WorkbookProfile],
 ) -> None:
-    """The measure of the whole feature: three real entries, regenerated to the cent.
-
-    The recomputed side is the approved formula over every employee row of the working; the
-    booked side is the debit total of the posting tab. Two independent readings of two
-    different tables, and they agree exactly on all three files.
+    """The French formula - CP provision plus a twelfth of the RTT accrual, over every
+    employee row of the working - against the debit side of the posting tab. Two independent
+    readings of two different tables, within the business's own tolerance on both periods;
+    see ``RECOMPUTED`` for why neither is exactly the booked amount.
     """
     paper = _recalculation(name, sample_data, sample_profile)
 
-    assert paper.recomputed_total == BOOKED[name]
+    assert paper.recomputed_total == RECOMPUTED[name]
     assert paper.booked.total == BOOKED[name]
-    assert paper.difference == Decimal("0.00")
     assert paper.within_tolerance is True
-    assert paper.status is Status.PASS
-    assert paper.citation_count == 0
+    assert abs(paper.difference or Decimal(0)) < Decimal("0.05")
 
 
-@pytest.mark.parametrize("name", ALL)
-def test_every_employee_row_is_rebuilt_and_none_is_assumed(
+def test_the_global_workbook_cannot_be_recalculated_under_the_french_formula(
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    """935348.xlsb carries no ``cp_provision`` or ``rtt_accrual`` column at all - the global
+    MSVacation model does not use the French CP/RTT convention this formula now states.
+
+    Inconclusive, never a failure: nothing here claims the entry's value is wrong, only that
+    it cannot be measured under this basis. The formula is shown unsubstituted for the same
+    reason a reviewer is shown anything else that could not be bound - there is no column to
+    read a header from.
+    """
+    paper = _recalculation("935348.xlsb", sample_data, sample_profile)
+
+    assert paper.status is Status.UNABLE_TO_VALIDATE
+    assert paper.rows_total == 0
+    assert paper.recomputed_total == Decimal(0)
+    assert "cp_provision" in paper.notes[0]
+    assert "rtt_accrual" in paper.notes[0]
+    assert paper.basis.formula_in_headers == "cp_provision + (rtt_accrual / 12)"
+
+
+ROWS_RECOMPUTED = {"236264.xlsx": 2_280, "305800.xlsx": 2_271}
+ROWS_INCOMPLETE = {"236264.xlsx": 0, "305800.xlsx": 2}
+
+
+@pytest.mark.parametrize("name", XLSX)
+def test_every_employee_row_is_rebuilt_or_named_as_incomplete(
     name: str,
     sample_data: Callable[[str], WorkbookData],
     sample_profile: Callable[[str], WorkbookProfile],
 ) -> None:
-    """The same record count the re-performance engine and the split work paper reach."""
+    """305800.xlsx's two employees with an unmapped #N/A staffing type carry no CP or RTT
+    data at all - a known gap (``cp_provision_rebuilds`` and the reperformance identities
+    already report it the same way), genuinely incomplete under this formula and reported as
+    such rather than assumed. 236264.xlsx has no such gap."""
     paper = _recalculation(name, sample_data, sample_profile)
 
     assert paper.rows_total == CALCULATION_ROWS[name]
-    assert paper.rows_recomputed == CALCULATION_ROWS[name]
-    assert paper.rows_agreeing == CALCULATION_ROWS[name]
-    assert paper.rows_incomplete == 0
-    assert paper.complete is True
+    assert paper.rows_recomputed == ROWS_RECOMPUTED[name]
+    assert paper.rows_incomplete == ROWS_INCOMPLETE[name]
+    assert paper.rows_agreeing == ROWS_RECOMPUTED[name]
     assert paper.basis.sheet == CALCULATION_TAB[name]
 
 
@@ -514,7 +564,29 @@ def test_the_leave_leg_re_performs_from_days_and_a_daily_rate(
     assert corroboration.impact == Decimal(0)
 
 
-@pytest.mark.parametrize("name", ALL)
+@pytest.mark.parametrize("name", XLSX)
+def test_the_fte_split_still_corroborates_as_a_leg_not_the_headline(
+    name: str,
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    """FTE plus non-FTE accrual, the formula this card used before version 9, re-performed
+    and compared with the stated total - still verified on every row, just not decisive."""
+    paper = _recalculation(name, sample_data, sample_profile)
+
+    corroboration = next(item for item in paper.corroborations if item.term == "fte_split")
+    assert corroboration.rows_compared == CALCULATION_ROWS[name]
+    assert corroboration.agrees is True
+    assert corroboration.impact == Decimal(0)
+
+
+FORMULA_IN_HEADERS = {
+    "236264.xlsx": "Total Provision\nCP + (RTT Accrual Amount / 12)",
+    "305800.xlsx": "Total Provision\nCP + (RTT Accrual Amount / 12)",
+}
+
+
+@pytest.mark.parametrize("name", XLSX)
 def test_the_formula_reads_back_in_the_preparers_own_column_names(
     name: str,
     sample_data: Callable[[str], WorkbookData],
@@ -523,7 +595,7 @@ def test_the_formula_reads_back_in_the_preparers_own_column_names(
     """A substitution, never a translation: the sentence cannot say what the file does not."""
     paper = _recalculation(name, sample_data, sample_profile)
 
-    assert paper.basis.formula_in_headers == "FTE Vacation Accrual + Non-FTE Vacation Accrual"
+    assert paper.basis.formula_in_headers == FORMULA_IN_HEADERS[name]
     assert paper.basis.stated_header == "TOTAL ACCRUAL"
 
 
@@ -555,3 +627,86 @@ def test_no_citation_or_sample_carries_an_employee_identifier(
     for citation in paper.citations:
         labels = {value.label.casefold() for value in citation.inputs}
         assert not labels & {"matricule", "salari", "nom", "name", "employee"}, labels
+
+
+# ------------------------------- step 13c: the formulas the workbooks themselves apply
+
+
+AUDITED_COLUMNS = {"236264.xlsx": 6, "305800.xlsx": 6, "935348.xlsb": 2}
+"""Columns whose formulas are examined on each file: every one the business declares
+arithmetic for that the workbook actually binds, plus the posted line the booked amount is
+read from. Two on the binary model, which binds neither leave leg."""
+
+
+@pytest.mark.parametrize("name", XLSX)
+def test_the_working_states_its_amounts_rather_than_calculating_them(
+    name: str,
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    """The true and useful finding about these files, and the reason the entry is tied to
+    the posting rather than to the working's own formulas.
+
+    Every column the business declares arithmetic for is pasted from the payroll extract.
+    There is no formula to read, so the arithmetic behind the figures cannot be evidenced
+    from this workbook - which is a limit of the evidence, reported rather than inferred.
+    """
+    paper = _recalculation(name, sample_data, sample_profile)
+
+    assert paper.formula_columns_audited == AUDITED_COLUMNS[name]
+    faults = {finding.fault for finding in paper.formula_findings}
+    assert faults == {FormulaFault.NOT_CALCULATED}, faults
+    assert {finding.column for finding in paper.formula_findings} == {"AH", "AC", "K", "M", "S"}
+    assert all(finding.rows_affected > 1_500 for finding in paper.formula_findings)
+
+
+@pytest.mark.parametrize("name", XLSX)
+def test_the_posted_lines_carry_one_consistent_formula(
+    name: str,
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    """Where these files *do* calculate, the audit finds nothing wrong - which is the point.
+
+    The posting tab links every line amount to the entry it was built from, 422 of them on
+    one period and 426 on the other, and they are one filled-down formula. A line whose link
+    had been edited or typed over would be reported here, and that is how one posted line
+    comes to carry another line's amount.
+    """
+    paper = _recalculation(name, sample_data, sample_profile)
+
+    posted = [finding for finding in paper.formula_findings if finding.sheet == "Batch JE"]
+    assert posted == [], [(finding.fault, finding.cell) for finding in posted]
+
+
+def test_a_format_with_no_formulas_says_so_rather_than_reporting_nothing_wrong(
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    """A clean bill of health and "nobody could look" must never render the same way."""
+    paper = _recalculation("935348.xlsb", sample_data, sample_profile)
+
+    assert [finding.fault for finding in paper.formula_findings] == [FormulaFault.UNREADABLE]
+    assert paper.formula_columns_audited == AUDITED_COLUMNS["935348.xlsb"]
+
+
+@pytest.mark.parametrize("name", ALL)
+def test_the_preparers_own_subtotal_row_is_never_read_as_the_columns_arithmetic(
+    name: str,
+    sample_data: Callable[[str], WorkbookData],
+    sample_profile: Callable[[str], WorkbookProfile],
+) -> None:
+    """The false finding this guard exists for, pinned on the files that produced it.
+
+    One period's working carries ``=SUBTOTAL(9,AH9:AH2282)`` on the row beneath its records -
+    the only formula in the column. Read as the column's derivation it reported, confidently,
+    that the entry's total column was computed from the wrong inputs.
+    """
+    paper = _recalculation(name, sample_data, sample_profile)
+
+    wrong = [
+        finding
+        for finding in paper.formula_findings
+        if finding.fault is FormulaFault.DIFFERENT_INPUTS
+    ]
+    assert wrong == [], [(finding.cell, finding.formula) for finding in wrong]

@@ -17,7 +17,13 @@ from typing import Any, Final, NamedTuple
 
 from review.models.context import RecalculationSpec
 from review.models.evidence import Figure, RowCoverage
-from review.models.recalculation import DiscrepancyKind, EntryRecalculation, RecalcCitation
+from review.models.recalculation import (
+    DiscrepancyKind,
+    EntryRecalculation,
+    FormulaFault,
+    RecalcCitation,
+    RecalcRow,
+)
 from review.models.verdicts import Status
 from review.recalc.engine import recalculate
 from review.tools.base import BaseTool, ToolContext, ToolError
@@ -29,10 +35,12 @@ TOOL_NAME: Final = "recalc_entry_total"
 
 
 class Recalculated(NamedTuple):
-    """One engine run: the work paper for the reviewer, the figures for the check."""
+    """One engine run: the work paper for the reviewer, the figures for the check, and every
+    record the pass walked, for a reviewer to browse beyond the paper's own capped sample."""
 
     paper: EntryRecalculation | None
     figures: list[Figure]
+    rows: tuple[RecalcRow, ...] = ()
 
 
 def run_recalculation(
@@ -66,7 +74,7 @@ def run_recalculation(
         spec = spec.model_copy(update={"table": table})
 
     try:
-        paper = recalculate(ctx, spec)
+        paper, rows = recalculate(ctx, spec)
     except ToolError as exc:
         logger.info("recalculation unable on %s: %s", check_id, exc)
         return Recalculated(None, [tool.unable(check_id, str(exc), args)])
@@ -74,11 +82,26 @@ def run_recalculation(
         logger.warning("recalculation failed on %s: %r", check_id, exc)
         return Recalculated(None, [tool.unable(check_id, f"{type(exc).__name__}: {exc}", args)])
 
-    return Recalculated(paper, figures_for(tool, paper, check_id, args))
+    return Recalculated(
+        paper,
+        figures_for(
+            tool,
+            paper,
+            check_id,
+            args,
+            faults_can_fail=ctx.rules.formula_defects_can_fail_check,
+        ),
+        rows,
+    )
 
 
 def figures_for(
-    tool: BaseTool, paper: EntryRecalculation, check_id: str, args: dict[str, Any]
+    tool: BaseTool,
+    paper: EntryRecalculation,
+    check_id: str,
+    args: dict[str, Any],
+    *,
+    faults_can_fail: bool = False,
 ) -> list[Figure]:
     """The work paper as evidence: the entry, then the rows, then any corroboration.
 
@@ -87,7 +110,10 @@ def figures_for(
     it carries the coverage, so an entry that happens to agree while records are missing can
     never be read as proven: ``Figure.supports_pass`` enforces that, here as everywhere.
     """
-    figures = [_entry_figure(tool, paper, check_id, args)]
+    figures = [_entry_figure(tool, paper, check_id, args, faults_can_fail=faults_can_fail)]
+    faults = _faults_figure(tool, paper, check_id, args)
+    if faults is not None:
+        figures.append(faults)
     rows = _rows_figure(tool, paper, check_id, args)
     if rows is not None:
         figures.append(rows)
@@ -124,9 +150,22 @@ class RecalcEntryTotalTool(BaseTool):
 
 
 def _entry_figure(
-    tool: BaseTool, paper: EntryRecalculation, check_id: str, args: dict[str, Any]
+    tool: BaseTool,
+    paper: EntryRecalculation,
+    check_id: str,
+    args: dict[str, Any],
+    *,
+    faults_can_fail: bool,
 ) -> Figure:
-    """The comparison the check turns on: recomputed against booked, under the tolerance."""
+    """The comparison the check turns on: recomputed against booked, under the tolerance.
+
+    ``faults_can_fail`` is ``rules.formula_defects_can_fail_check``, and it is the
+    business's switch rather than this module's opinion. Today it is false: a fault in the
+    workbook's own arithmetic is reported beside the figure and does not move the status,
+    the same treatment every other formula defect in the harness gets. Turning it on makes
+    an entry that reconciles through the wrong formula fail, which is a decision about how
+    strictly these entries are reviewed and is not one for code to take.
+    """
     numbers: list[Decimal] = [paper.recomputed_total]
     if paper.booked.total is not None:
         numbers.append(paper.booked.total)
@@ -153,11 +192,26 @@ def _entry_figure(
         )
     )
 
+    defects = [finding for finding in paper.formula_findings if finding.fault.is_defect]
+    blocked = faults_can_fail and bool(defects)
     return tool.figure(
         check_id,
         # ``ok`` is the measurement, not the status: unable-to-compute stays None, so a
         # recalculation nobody could perform is never read as a failure.
-        ok=None if paper.status is Status.UNABLE_TO_VALIDATE else paper.ties,
+        #
+        # Whether the *amount* reconciles, never whether every record did - that is the row
+        # figure's job, via its own coverage, which ``outcome_for`` already reads across every
+        # figure the check has. ``ok=paper.ties`` collapsed the two together: ``ties`` is
+        # false the moment coverage is incomplete, so a figure the entry-level ok check routes
+        # straight to FAIL and never reaches the partial-coverage branch at all - an amount
+        # that reconciles over a population two records short of complete reads as outright
+        # failed rather than partial, which the work paper's own three-way ``status`` already
+        # disagrees with on its face.
+        ok=(
+            None
+            if paper.status is Status.UNABLE_TO_VALIDATE
+            else (bool(paper.within_tolerance) and not blocked)
+        ),
         summary=paper.explanation,
         decisive=True,
         exception_count=paper.citation_count,
@@ -168,6 +222,64 @@ def _entry_figure(
         error=None
         if paper.status is not Status.UNABLE_TO_VALIDATE
         else "recalculation_unavailable",
+    )
+
+
+def _faults_figure(
+    tool: BaseTool, paper: EntryRecalculation, check_id: str, args: dict[str, Any]
+) -> Figure | None:
+    """What the workbook's own arithmetic turned out to be, as evidence in its own right.
+
+    Not decisive, and never the thing that passes the check: it reports on how the file
+    computes rather than on whether the entry reconciles. ``ok`` is None where nothing could
+    be established - a format carrying no formulas is not a clean bill of health, and the
+    two must never render the same way.
+    """
+    if not paper.formula_columns_audited:
+        return None
+
+    unreadable = any(finding.fault is FormulaFault.UNREADABLE for finding in paper.formula_findings)
+    # ``ok`` reports on defects alone. A column the file states rather than calculates is a
+    # limit of the evidence, listed below like everything else; calling the audit failed
+    # because of one would report every workbook of this kind as having something wrong.
+    defects = [finding for finding in paper.formula_findings if finding.fault.is_defect]
+    counts: dict[str, int] = {}
+    for finding in paper.formula_findings:
+        counts[finding.fault.value] = counts.get(finding.fault.value, 0) + 1
+
+    return tool.figure(
+        check_id,
+        ok=None if unreadable else not defects,
+        summary=(
+            f"The formulas behind {paper.formula_columns_audited} of the workbook's own "
+            "columns could not be read, so nothing was established about the arithmetic it "
+            "applies"
+            if unreadable
+            else (
+                f"Examined the formulas behind {paper.formula_columns_audited} column(s) and "
+                "found nothing wrong with them"
+                if not paper.formula_findings
+                else f"Examined the formulas behind {paper.formula_columns_audited} column(s): "
+                + ", ".join(
+                    f"{kind.replace('_', ' ')} on {count}" for kind, count in sorted(counts.items())
+                )
+            )
+        ),
+        decisive=False,
+        exception_count=len(paper.formula_findings),
+        samples=[
+            {
+                "cell": f"{finding.sheet}!{finding.cell}" if finding.cell else finding.sheet,
+                "fault": finding.fault.value,
+                "formula": finding.formula,
+                "expected": finding.expected,
+                "rows": finding.rows_affected,
+            }
+            for finding in paper.formula_findings
+        ],
+        numbers=[Decimal(len(paper.formula_findings))],
+        args={**args, "audit": "formulas"},
+        error="formulas_unreadable" if unreadable else None,
     )
 
 

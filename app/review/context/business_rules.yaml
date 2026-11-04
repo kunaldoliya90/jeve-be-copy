@@ -8,7 +8,7 @@
 # a re-performance entry are not scored on the same things - so they live in each
 # je_types/*.yaml file.
 
-version: 3
+version: 4
 
 # What each final status earns, out of 100.
 # `unable_to_validate` is deliberately half credit and never zero: the check was not proven
@@ -42,9 +42,11 @@ tolerance: "0.005"
 
 trend:
   lookback_months: 3
-  # Unresolved until the business sets it. While it is null the trend area scores half
-  # credit on every review and is never a pass - see the open decisions in the design.
-  max_change_pct: null
+  # A placeholder, not yet confirmed by the business: 20% of the trailing 3-month average.
+  # While this was null the trend check could only ever report the deviation, never fail
+  # on it - every review passed. It still passes wherever there is no prior review to
+  # compare against; a new entry type has no trend yet, and that is not a finding.
+  max_change_pct: 20
 
 pii:
   patterns: [email, iban, phone, ssn, nino, pan]
