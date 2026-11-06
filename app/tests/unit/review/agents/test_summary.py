@@ -1,13 +1,17 @@
-"""AI-5 and the template that stands in for it.
+"""AI-5's next steps, and the executive summary that is always code's.
 
 The template carries the whole load whenever no key is configured, which is every
-deterministic run, so it is tested as a first-class path rather than a fallback.
+deterministic run, so it is tested as a first-class path rather than a fallback. The
+executive summary itself never varies with whether a model answered - ``plain_summary`` is
+what both ``template`` and ``summarise`` build it from - so it gets its own tests, independent
+of either caller.
 """
 
+import re
 from decimal import Decimal
 
 from api.consts import RiskRating
-from review.agents.summary import SUMMARY_SCHEMA, headline_for, template
+from review.agents.summary import SUMMARY_SCHEMA, headline_for, plain_summary, template
 from review.models.result import AreaScore, Score, ScoringMethod
 from review.models.verdicts import CheckOutcome, ReviewFlag, Status
 
@@ -20,18 +24,18 @@ def _score(*, total: float = 62.5, provisional: bool = True) -> Score:
         provisional=provisional,
         areas=(
             AreaScore(
-                area="accrual_reperformance",
-                weight=25,
+                area="calculation_accuracy",
+                weight=60,
                 method=ScoringMethod.WEAKEST_CHECK,
                 score=100.0,
                 reason="every row reperformed",
             ),
             AreaScore(
-                area="population",
-                weight=15,
-                method=ScoringMethod.EXCEPTION_RATE,
+                area="evidence_completeness",
+                weight=40,
+                method=ScoringMethod.BASELINE_SHARE,
                 score=50.0,
-                reason="the employee reference is redacted",
+                reason="2 of 6 layers present",
             ),
         ),
     )
@@ -40,18 +44,18 @@ def _score(*, total: float = 62.5, provisional: bool = True) -> Score:
 def _outcomes() -> dict[str, CheckOutcome]:
     return {
         "accrual_reperforms": CheckOutcome(
-            check_id="accrual_reperforms", area="accrual_reperformance", final_status=Status.PASS
+            check_id="accrual_reperforms", area="calculation_accuracy", final_status=Status.PASS
         ),
-        "population_complete": CheckOutcome(
-            check_id="population_complete",
-            area="population",
+        "evidence_documented": CheckOutcome(
+            check_id="evidence_documented",
+            area="evidence_completeness",
             final_status=Status.UNABLE_TO_VALIDATE,
             needs_review=True,
             review_reasons=(ReviewFlag.MISSING_VERDICT,),
         ),
-        "je_balances": CheckOutcome(
-            check_id="je_balances",
-            area="je_reconciliation",
+        "evidence_approved": CheckOutcome(
+            check_id="evidence_approved",
+            area="evidence_completeness",
             final_status=Status.FAIL,
             needs_review=True,
         ),
@@ -70,20 +74,113 @@ def test_headline_for_omits_provisional_when_the_score_is_final() -> None:
     assert "provisional" not in headline_for(_score(provisional=False), _outcomes())
 
 
-def test_template_names_the_weakest_area_and_quotes_its_reason() -> None:
+# ------------------------------------------------------------------------ plain_summary
+
+
+def test_plain_summary_names_the_area_that_did_not_pass() -> None:
+    prose = plain_summary(_score(), _outcomes())
+
+    assert "Evidence completeness: 2 of 2 checks found exceptions that were not resolved." in prose
+
+
+def test_plain_summary_names_the_areas_that_passed() -> None:
+    assert "Calculation accuracy passed." in plain_summary(_score(), _outcomes())
+
+
+def test_plain_summary_names_every_area_passed_when_nothing_failed() -> None:
+    outcomes = {
+        "accrual_reperforms": CheckOutcome(
+            check_id="accrual_reperforms", area="calculation_accuracy", final_status=Status.PASS
+        ),
+        "evidence_documented": CheckOutcome(
+            check_id="evidence_documented", area="evidence_completeness", final_status=Status.PASS
+        ),
+    }
+
+    prose = plain_summary(_score(), outcomes)
+
+    assert prose == "Calculation accuracy and Evidence completeness passed."
+
+
+def test_plain_summary_words_each_status_differently() -> None:
+    def _area(status: Status) -> dict[str, CheckOutcome]:
+        return {
+            "the_check": CheckOutcome(
+                check_id="the_check", area="calculation_accuracy", final_status=status
+            )
+        }
+
+    score = Score(
+        total=50.0,
+        band="needs work",
+        risk_rating=RiskRating.MEDIUM,
+        provisional=True,
+        areas=(
+            AreaScore(
+                area="calculation_accuracy",
+                weight=100,
+                method=ScoringMethod.WEAKEST_CHECK,
+                score=0.0,
+            ),
+        ),
+    )
+
+    assert "found exceptions that were not resolved" in plain_summary(score, _area(Status.FAIL))
+    assert "could not be fully confirmed" in plain_summary(score, _area(Status.PARTIAL))
+    assert "could not be validated" in plain_summary(score, _area(Status.UNABLE_TO_VALIDATE))
+    assert "required evidence was missing" in plain_summary(score, _area(Status.MISSING_EVIDENCE))
+
+
+def test_plain_summary_carries_no_cell_reference_citation_or_schema_name() -> None:
+    """The one guarantee the whole function exists for."""
+    prose = plain_summary(_score(), _outcomes())
+
+    assert not re.search(r"\([A-Z]{1,3}-\d{1,3}\)", prose), "no figure citation, e.g. (F-01)"
+    assert "!" not in prose, "no cell reference, e.g. GPAY!E1"
+    assert "_" not in prose, "no snake_case schema or tool identifier"
+
+
+def test_plain_summary_is_empty_for_a_score_with_no_areas() -> None:
+    bare = Score(total=100.0, band="clean", risk_rating=RiskRating.LOW, provisional=False, areas=())
+
+    assert plain_summary(bare, {}) == ""
+
+
+def test_plain_summary_falls_back_to_a_titled_key_for_an_unmapped_area() -> None:
+    score = Score(
+        total=50.0,
+        band="needs work",
+        risk_rating=RiskRating.MEDIUM,
+        provisional=True,
+        areas=(
+            AreaScore(
+                area="je_reconciliation",
+                weight=100,
+                method=ScoringMethod.WEAKEST_CHECK,
+                score=0.0,
+            ),
+        ),
+    )
+    outcomes = {"x": CheckOutcome(check_id="x", area="je_reconciliation", final_status=Status.FAIL)}
+
+    assert "Je reconciliation:" in plain_summary(score, outcomes)
+
+
+# ----------------------------------------------------------------------------- template
+
+
+def test_template_reuses_plain_summary() -> None:
     report = template(_score(), _outcomes(), "head")
 
     assert report.headline == "head"
-    assert "population at 50.0" in report.summary
-    assert "the employee reference is redacted" in report.summary
-    assert "provisional" in report.summary
+    assert report.summary.startswith(plain_summary(_score(), _outcomes()))
 
 
 def test_template_lists_failures_and_the_waiting_count_as_next_steps() -> None:
     report = template(_score(), _outcomes(), "head")
 
     assert report.next_steps == (
-        "Review je_balances, which failed.",
+        "Review evidence_approved, which failed.",
         "Settle the 1 check(s) waiting on a person above.",
     )
 
@@ -97,7 +194,6 @@ def test_template_appends_the_caveats_code_established_to_the_summary() -> None:
     report = template(_score(), _outcomes(), "head", notes=("The entry type is uncorroborated.",))
 
     assert report.summary.endswith("The entry type is uncorroborated.")
-    assert report.summary.startswith("3 checks ran on this entry")
 
 
 def test_template_puts_the_steps_code_insists_on_first() -> None:
@@ -107,29 +203,22 @@ def test_template_puts_the_steps_code_insists_on_first() -> None:
     assert report.next_steps[0] == "Confirm the entry type."
 
 
-def test_template_never_quotes_a_number_it_was_not_given() -> None:
-    """Every figure in the template is copied from the score, which is what makes it safe."""
-    report = template(_score(total=0.0), {}, "head")
-
-    assert report.summary.startswith("0 checks ran on this entry: 0 failed and 0 need a person")
-    assert report.next_steps == ()
-
-
 def test_template_survives_a_score_with_no_areas() -> None:
     bare = Score(total=100.0, band="clean", risk_rating=RiskRating.LOW, provisional=False, areas=())
 
     report = template(bare, {}, "head")
 
-    assert "weakest area" not in report.summary
+    assert report.summary == ""
+    assert report.next_steps == ()
 
 
 def test_summary_schema_is_strict_so_the_model_cannot_add_fields() -> None:
     assert SUMMARY_SCHEMA["additionalProperties"] is False
-    assert set(SUMMARY_SCHEMA["required"]) == {"summary", "next_steps"}
+    assert set(SUMMARY_SCHEMA["required"]) == {"next_steps"}
 
 
 def test_the_template_carries_no_financial_figures_of_its_own() -> None:
-    """It summarises statuses. Amounts belong to the figures, and the model cites those."""
+    """It summarises statuses. Amounts belong to the figures, and next steps cite those."""
     report = template(_score(), _outcomes(), "head")
 
     assert str(Decimal("27905812.64")) not in report.summary

@@ -64,4 +64,9 @@ async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     yield
 
+    # Without this, a review started moments before shutdown keeps running on the event
+    # loop after nothing is serving from it, and can still reach step 20 and write its
+    # record - into a temp directory a test already tore down, in the harness, or into a
+    # worker nobody will ever ask about it, in production.
+    await app.state.orchestrator.shutdown()
     logger.info("Stopped %s", config.APP_NAME)

@@ -247,6 +247,7 @@ class ReviewSummary(BaseModel):
 
     review_id: str
     file_name: str
+    document_number: str | None = Field(default=None)
     je_type: str
     status: ReviewState
     score: float | None = Field(default=None)

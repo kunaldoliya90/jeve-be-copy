@@ -153,6 +153,7 @@ class ReviewsView(APIView):
             ReviewSummary(
                 review_id=run.review_id,
                 file_name=run.file_name,
+                document_number=document_number_of(run.file_name),
                 je_type="unknown",
                 status=run.status,
                 created_at=run.created_at,
@@ -258,6 +259,66 @@ class ReviewView(APIView):
 
         logger.info("review %s deleted", review_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+_WORKBOOK_MEDIA_TYPES: dict[str, str] = {
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
+    ".xlsb": "application/vnd.ms-excel.sheet.binary.macroEnabled.12",
+}
+
+
+class ReviewWorkbookView(APIView):
+    """The exact workbook a review was run on, for a reviewer who wants to open it again.
+
+    Only ever read from the store: a review is not a finished work product until step 20
+    has written it, and that is the same moment its workbook copy is kept. There is nothing
+    useful to serve for a review still running.
+    """
+
+    @classmethod
+    @APIView.configure(
+        tags=[ApiTag.REVIEWS],
+        summary="Download the workbook a review was run on",
+        responses={
+            404: {
+                "model": ErrorResponse,
+                "description": "No such review, or no workbook copy was kept for it",
+            },
+        },
+    )
+    async def get(cls, request: Request, review_id: str) -> Response:
+        store = request.app.state.store
+        stored = store.read(review_id)
+        if stored is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=ErrorResponse(
+                    error_code=ErrorCode.REVIEW_NOT_FOUND,
+                    message=f"No review with id {review_id}",
+                    review_id=review_id,
+                ).model_dump(mode="json"),
+            )
+
+        content = store.read_workbook(review_id)
+        if content is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=ErrorResponse(
+                    error_code=ErrorCode.WORKBOOK_NOT_STORED,
+                    message="No workbook was kept for this review",
+                    review_id=review_id,
+                ).model_dump(mode="json"),
+            )
+
+        file_name = stored.audit.file_name or f"{review_id}.xlsx"
+        suffix = file_name[file_name.rfind(".") :].lower() if "." in file_name else ""
+        media_type = _WORKBOOK_MEDIA_TYPES.get(suffix, "application/octet-stream")
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
+        )
 
 
 class ReviewEventsView(APIView):
@@ -570,5 +631,6 @@ __all__ = [
     "EvidenceView",
     "ReviewEventsView",
     "ReviewView",
+    "ReviewWorkbookView",
     "ReviewsView",
 ]
