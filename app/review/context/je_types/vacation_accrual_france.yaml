@@ -8,7 +8,7 @@
 # Business context for everything below: the `vacation-accrual` skill.
 
 id: vacation-accrual-france
-version: 11
+version: 12
 name: France vacation accrual
 process: Record to Report
 sub_process: Payroll
@@ -281,7 +281,7 @@ recalculation:
   # already follows, so a new review never changes what this section says.
   explained:
     intro: >
-      Here is the calculation in plain language, using employee 1073 as the example.
+      The formula used, explained step by step.
     context: >
       What we are calculating: how much the company owes an employee for paid leave they have
       earned but not yet taken. There are two kinds of leave. Regular paid holidays (CP), and
@@ -297,7 +297,7 @@ recalculation:
         detail: >
           If no RTT days have been taken at all, the RTT part of the accrual is nil and the
           calculation goes straight to the paid-holiday amount. Otherwise it carries on.
-        example: Employee 1073 has taken 1 day, so the calculation continues.
+        example: Say 1 day has been taken, so the calculation continues.
       - label: How many of those days are still unused?
         detail: >
           Subtract the RTT days the employee has already taken. If they have taken more than
@@ -319,7 +319,7 @@ recalculation:
         detail: >
           The calculation only applies to employees classified as FTE or Non-FTE. For anyone
           else the result is zero.
-        example: Employee 1073 is FTE, so the result stands.
+        example: Say the employee is FTE, so the result stands.
     summary: >
       In one sentence: the total accrual is one month's share of the value of unused RTT days,
       plus the full value of unused paid holidays, for FTE and Non-FTE employees only.

@@ -82,7 +82,7 @@ def map_check(
     if unverified:
         notes.append(
             f"{len(unverified)} citation(s) for the entry type point at cells that are "
-            f"empty or absent: {', '.join(unverified[:4])}."
+            "empty or absent."
         )
 
     if understanding.je_type == recognised.je_type and recognised.recognised:

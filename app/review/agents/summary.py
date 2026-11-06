@@ -1,13 +1,14 @@
-"""AI-5. The summary a reviewer reads first, and the template that stands in for it.
+"""AI-5. The next steps a reviewer reads, and the executive summary that is always code's.
 
-The model is given what was *decided*, never what to decide: the area scores, the final
-status of every check, and the findings carrying the most money. It writes prose around
-numbers that are already settled, and step 19 then checks every number it wrote.
+The executive summary is never composed by a model: ``plain_summary`` builds it from the
+score alone, one line per area that did not fully pass and one naming the ones that did. It
+can never carry a cell reference, a figure citation or a tool's own schema name, because it
+never reads a tool's output in the first place — only the status an area finally reached.
 
-A failure here is the least costly in the harness, so it never fails the review. With no
-provider, no answer or an unusable one, a template summary is assembled from the same
-figures — plainer, and safe for exactly that reason: every number in it was copied from a
-figure by code rather than composed around one.
+What a model can still add is the next steps: the specific things a person must obtain or
+confirm, which benefits from reading the findings rather than just their statuses. A failure
+here is the least costly in the harness, so it never fails the review — with no provider, no
+answer or an unusable one, the next steps fall back to the failed checks themselves, named.
 """
 
 import json
@@ -22,13 +23,13 @@ from review.context.prompts import PromptRegistry
 from review.models.context import JETypeContext
 from review.models.evidence import ExceptionCluster, Figure
 from review.models.result import ReportPayload, Score
-from review.models.verdicts import CheckOutcome, Status
+from review.models.verdicts import CheckOutcome, Status, stricter
 
 logger = logging.getLogger(__name__)
 
-MAX_OUTPUT_TOKENS: Final = 4_000
-"""Prose plus reasoning tokens. Below this a reasoning model returns nothing at all rather
-than something short, and the template would stand in for no good reason."""
+MAX_OUTPUT_TOKENS: Final = 1_000
+"""Next steps plus reasoning tokens. Below this a reasoning model returns nothing at all
+rather than something short, and the fallback steps would stand in for no good reason."""
 
 TOP_FINDINGS: Final = 8
 MAX_LISTED: Final = 6
@@ -36,12 +37,8 @@ MAX_LISTED: Final = 6
 SUMMARY_SCHEMA: Final[dict[str, Any]] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["summary", "next_steps"],
+    "required": ["next_steps"],
     "properties": {
-        "summary": {
-            "type": "string",
-            "description": "Three to five sentences, what a reviewer must act on first",
-        },
         "next_steps": {
             "type": "array",
             "maxItems": MAX_LISTED,
@@ -49,6 +46,24 @@ SUMMARY_SCHEMA: Final[dict[str, Any]] = {
             "description": "Specific things a person must obtain or confirm",
         },
     },
+}
+
+AREA_LABELS: Final[dict[str, str]] = {
+    "evidence_completeness": "Evidence completeness",
+    "evidence_appropriateness": "Evidence appropriateness",
+    "calculation_accuracy": "Calculation accuracy",
+    "pii": "PII review",
+    "trend": "Trend analysis",
+    "period": "Period validation",
+}
+"""Plain names for the six-parameter model's areas. An area from an older context version
+falls back to its key, titled — those are read-only history, and never worth a line here."""
+
+_STATUS_WORDING: Final[dict[Status, str]] = {
+    Status.FAIL: "found exceptions that were not resolved",
+    Status.PARTIAL: "could not be fully confirmed",
+    Status.MISSING_EVIDENCE: "could not be assessed because required evidence was missing",
+    Status.UNABLE_TO_VALIDATE: "could not be validated",
 }
 
 
@@ -63,9 +78,10 @@ async def summarise(
     clusters: dict[str, tuple[ExceptionCluster, ...]] | None = None,
     steps: tuple[str, ...] = (),
 ) -> tuple[ReportPayload, LLMResponse | None]:
-    """The written report: the model's where one answered, and code's otherwise.
+    """The written report: the executive summary is always code's, the next steps are the
+    model's where one answered.
 
-    The headline is always code's. It carries the score and the counts, which are the
+    The headline is always code's too. It carries the score and the counts, which are the
     numbers most likely to be quoted onward, and those are not left to prose.
 
     ``notes`` are review-level observations code established — an uncorroborated entry type,
@@ -75,7 +91,9 @@ async def summarise(
     found, which a model reading only the outcomes has no way to know it must give.
     """
     headline = headline_for(score, outcomes)
-    fallback = template(score, outcomes, headline, notes, steps)
+    summary = _with_notes(plain_summary(score, outcomes), notes)
+    fallback_steps = (*steps, *_fallback_next_steps(outcomes))[:MAX_LISTED]
+    fallback = ReportPayload(headline=headline, summary=summary, next_steps=fallback_steps)
     if provider is None:
         return fallback, None
 
@@ -93,21 +111,14 @@ async def summarise(
     try:
         written = json.loads(response.text)
     except json.JSONDecodeError as exc:
-        logger.warning("the summary was not valid JSON, using the template: %s", exc)
+        logger.warning("the next steps were not valid JSON, using the fallback: %s", exc)
         return fallback, response
     if not isinstance(written, dict):  # pragma: no cover - the schema forbids it
         return fallback, response
 
-    prose = str(written.get("summary", "")).strip()
-    if not prose:
-        return fallback, response
-
+    next_steps = (*steps, *_lines(written.get("next_steps")))[:MAX_LISTED]
     return (
-        ReportPayload(
-            headline=headline,
-            summary=_with_notes(prose, notes),
-            next_steps=(*steps, *_lines(written.get("next_steps")))[:MAX_LISTED],
-        ),
+        ReportPayload(headline=headline, summary=summary, next_steps=next_steps or fallback_steps),
         response,
     )
 
@@ -130,7 +141,73 @@ def template(
     notes: tuple[str, ...] = (),
     steps: tuple[str, ...] = (),
 ) -> ReportPayload:
-    """A summary assembled from the outcomes themselves, for when no model answers."""
+    """The report for when no model answers. The same summary a model-written one gets,
+    since neither composes the executive summary from a tool's own output."""
+    return ReportPayload(
+        headline=headline,
+        summary=_with_notes(plain_summary(score, outcomes), notes),
+        next_steps=(*steps, *_fallback_next_steps(outcomes))[:MAX_LISTED],
+    )
+
+
+def _area_status(checks: list[CheckOutcome]) -> Status:
+    """An area is no better than its worst check.
+
+    Mirrors ``api.pydanticmodels.review_models.area_status`` exactly, kept as its own copy
+    rather than imported: the API layer already depends on this package, and a dependency
+    back the other way would be a layering mistake, not a shortcut.
+    """
+    worst = checks[0].final_status
+    for check in checks[1:]:
+        worst = stricter(worst, check.final_status)
+    return worst
+
+
+def _joined(items: list[str]) -> str:
+    """``"A"``, ``"A and B"``, or ``"A, B and C"`` — never an Oxford comma before the last."""
+    if len(items) <= 1:
+        return items[0] if items else ""
+    return f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def plain_summary(score: Score, outcomes: dict[str, CheckOutcome]) -> str:
+    """The executive summary, in plain English: one line naming each area that did not
+    fully pass, then one line naming the ones that did.
+
+    Built from the score alone — an area's label and how many of its checks cleared — and
+    never from a check's conclusion or a tool's figure. That is what makes it safe: there is
+    no cell reference, figure citation or schema name anywhere in this function for a line to
+    accidentally carry forward. Every one of those stays exactly where it belongs, in the
+    sections below, next to the finding it explains.
+    """
+    sentences: list[str] = []
+    passed: list[str] = []
+
+    for area in score.areas:
+        label = AREA_LABELS.get(area.area, area.area.replace("_", " ").capitalize())
+        checks = [outcome for outcome in outcomes.values() if outcome.area == area.area]
+        if not checks:
+            continue
+
+        status = _area_status(checks)
+        if status is Status.PASS:
+            passed.append(label)
+            continue
+
+        unresolved = sum(1 for outcome in checks if outcome.final_status is not Status.PASS)
+        noun = "check" if len(checks) == 1 else "checks"
+        sentences.append(
+            f"{label}: {unresolved} of {len(checks)} {noun} {_STATUS_WORDING[status]}."
+        )
+
+    if passed:
+        sentences.append(f"{_joined(passed)} passed.")
+
+    return " ".join(sentences)
+
+
+def _fallback_next_steps(outcomes: dict[str, CheckOutcome]) -> tuple[str, ...]:
+    """What the fallback insists on: the failed checks, named, and the waiting count."""
     failed = sorted(
         (o for o in outcomes.values() if o.final_status is Status.FAIL),
         key=lambda outcome: outcome.check_id,
@@ -139,35 +216,9 @@ def template(
         (o for o in outcomes.values() if o.needs_review and o.final_status is not Status.FAIL),
         key=lambda outcome: outcome.check_id,
     )
-    weakest = min(score.areas, key=lambda area: area.score, default=None)
-
-    sentences = [
-        f"{len(outcomes)} checks ran on this entry: {len(failed)} failed and "
-        f"{len(waiting) + len(failed)} need a person before the score is final."
-    ]
-    if weakest is not None:
-        sentences.append(
-            f"The weakest area is {weakest.area.replace('_', ' ')} at {weakest.score} "
-            f"out of 100{f': {weakest.reason}' if weakest.reason else ''}."
-        )
-    if score.provisional:
-        sentences.append(
-            "The score is provisional: an unvalidated check holds half credit and may fall "
-            "once a reviewer settles it."
-        )
-
-    return ReportPayload(
-        headline=headline,
-        summary=_with_notes(" ".join(sentences), notes),
-        next_steps=(
-            *steps,
-            *(f"Review {outcome.check_id}, which failed." for outcome in failed),
-            *(
-                (f"Settle the {len(waiting)} check(s) waiting on a person above.",)
-                if waiting
-                else ()
-            ),
-        )[:MAX_LISTED],
+    return (
+        *(f"Review {outcome.check_id}, which failed." for outcome in failed),
+        *((f"Settle the {len(waiting)} check(s) waiting on a person above.",) if waiting else ()),
     )
 
 
@@ -274,4 +325,12 @@ def _payload(
     }
 
 
-__all__ = ["MAX_OUTPUT_TOKENS", "SUMMARY_SCHEMA", "headline_for", "summarise", "template"]
+__all__ = [
+    "AREA_LABELS",
+    "MAX_OUTPUT_TOKENS",
+    "SUMMARY_SCHEMA",
+    "headline_for",
+    "plain_summary",
+    "summarise",
+    "template",
+]

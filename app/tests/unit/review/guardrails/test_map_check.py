@@ -97,8 +97,11 @@ def test_a_citation_at_an_empty_cell_is_reported_and_dropped() -> None:
 
     assert verdict.agrees
     assert [citation.cell for citation in verdict.citations] == ["B2"]
+    assert "1 citation(s)" in verdict.notes[0]
     assert "point at cells that are empty or absent" in verdict.notes[0]
-    assert "JE Upload!Z99" in verdict.notes[0]
+    # The cell itself stays out of the note: a reviewer reading the summary is told how many
+    # citations did not verify, not sent hunting through cell references in prose.
+    assert "Z99" not in verdict.notes[0]
 
 
 def test_a_citation_on_a_sheet_that_does_not_exist_is_reported() -> None:
@@ -110,7 +113,8 @@ def test_a_citation_on_a_sheet_that_does_not_exist_is_reported() -> None:
     verdict = map_check(understanding, _recognised(), _sheet_map(), _data())
 
     assert verdict.citations == ()
-    assert "No Such Tab!A1" in verdict.notes[0]
+    assert "point at cells that are empty or absent" in verdict.notes[0]
+    assert "No Such Tab" not in verdict.notes[0]
 
 
 def test_a_reference_that_is_not_an_a1_address_is_reported_not_crashed_on() -> None:

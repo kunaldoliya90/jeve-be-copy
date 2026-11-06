@@ -525,7 +525,9 @@ def test_the_report_is_written_even_with_no_model_configured(
     detail = api.get(f"{REVIEWS}{_finish(api, workbook)}/").json()
 
     assert detail["headline"].startswith(f"{detail['score']} out of 100")
-    assert "checks ran on this entry" in detail["summary"]
+    assert detail["summary"], "the executive summary is always code's, never blank"
+    assert "!" not in detail["summary"], "no cell reference in the executive summary"
+    assert "(" not in detail["summary"], "no figure citation in the executive summary"
     assert detail["next_steps"], "a template still says what a person has to do"
     assert detail["untraced_numbers"] == [], "a template quotes only figures it was given"
     assert detail["cost"]["total_usd"] == "0", "no model ran, so nothing was spent"
@@ -553,23 +555,21 @@ def _agrees_on_the_type(stub: StubLLMProvider) -> None:
     }
 
 
-def test_the_model_writes_the_report_when_one_is_configured(
+def test_the_model_writes_the_next_steps_when_one_is_configured(
     stub_client: TestClient, stub_model: StubLLMProvider, workbook: bytes
 ) -> None:
+    """The executive summary is always code's — a model configured or not changes only the
+    next steps."""
     _agrees_on_the_type(stub_model)
     stub_model.answers["summary"] = {
-        "summary": (
-            "The entry reperformed in full. Population could not be validated: the employee "
-            "reference is redacted, so the population cannot be tied."
-        ),
         "next_steps": ["Obtain an unredacted or hashed employee reference."],
     }
 
     detail = stub_client.get(f"{REVIEWS}{_finish(stub_client, workbook)}/").json()
 
-    assert detail["summary"].startswith("The entry reperformed in full")
-    assert "the population cannot be tied" in detail["summary"]
     assert detail["next_steps"] == ["Obtain an unredacted or hashed employee reference."]
+    assert "!" not in detail["summary"], "no cell reference in the executive summary"
+    assert "(" not in detail["summary"], "no figure citation in the executive summary"
     # The headline stays code's: the score and the counts are not left to prose.
     assert detail["headline"].startswith(f"{detail['score']} out of 100")
 
@@ -653,32 +653,12 @@ def test_a_second_reading_that_cannot_place_the_file_sends_it_to_a_person(
     detail = stub_client.get(f"{REVIEWS}{_finish(stub_client, workbook)}/").json()
 
     assert detail["status"] == "needs_review"
-    assert "could not place it" in detail["summary"]
     assert detail["score"] is not None, "a disputed type does not stop the arithmetic"
 
     stored = store_of(stub_client).read(detail["review_id"])
     assert stored is not None
     assert stored.audit.je_type_corroborated is False
     assert stored.audit.je_type_confidence == DISPUTED_CONFIDENCE
-
-
-def test_a_citation_pointing_at_an_empty_cell_is_reported_unverified(
-    stub_client: TestClient, stub_model: StubLLMProvider, workbook: bytes
-) -> None:
-    stub_model.answers["understanding"] = {
-        "je_type": "vacation-accrual-france",
-        "confidence": 0.9,
-        "citations": [
-            {"sheet": "GPAY", "cell": "A1", "why": "the calculation"},
-            {"sheet": "GPAY", "cell": "ZZ99999", "why": "nothing is here"},
-            {"sheet": "No Such Tab", "cell": "A1", "why": "nor here"},
-        ],
-        "roles": [],
-    }
-
-    detail = stub_client.get(f"{REVIEWS}{_finish(stub_client, workbook)}/").json()
-
-    assert "point at cells that are empty or absent" in detail["summary"]
 
 
 def test_the_type_reading_never_sees_the_workbook(
@@ -717,14 +697,13 @@ def test_a_number_the_model_invented_is_named_not_removed(
     tells the reader which number to distrust.
     """
     stub_model.answers["summary"] = {
-        "summary": "The accrual understates the liability by 918273.45.",
-        "next_steps": [],
+        "next_steps": ["Confirm the accrual does not understate the liability by 918273.45."],
     }
 
     detail = stub_client.get(f"{REVIEWS}{_finish(stub_client, workbook)}/").json()
 
     assert detail["untraced_numbers"] == ["918273.45"]
-    assert "918273.45" in detail["summary"]
+    assert "918273.45" in detail["next_steps"][0]
 
 
 def test_the_report_never_shows_the_model_the_workbook(
@@ -1059,6 +1038,48 @@ def test_the_upload_ignores_a_document_number_or_rating_sent_with_it(
     detail = api.get(f"{REVIEWS}{review_id}/").json()
     assert detail["document_number"] == "236264"
     assert detail["risk_rating"] != "catastrophic"
+
+
+def test_the_listed_document_number_matches_the_detail(api: TestClient, workbook: bytes) -> None:
+    """Nobody types this on the upload form any more, so the list has to carry it too, not
+    just the single-review view."""
+    review_id = _finish(api, workbook)
+
+    row = next(row for row in api.get(REVIEWS).json() if row["review_id"] == review_id)
+    assert row["document_number"] == "236264"
+
+
+# ------------------------------------------------------------------- the stored workbook
+
+
+def test_the_uploaded_workbook_can_be_downloaded_again(api: TestClient, workbook: bytes) -> None:
+    """The copy kept at step 20 is byte for byte the file that was reviewed."""
+    review_id = _finish(api, workbook)
+
+    response = api.get(f"{REVIEWS}{review_id}/workbook/")
+
+    assert response.status_code == 200
+    assert response.content == workbook
+    assert "236264.xlsx" in response.headers["content-disposition"]
+
+
+def test_downloading_the_workbook_for_an_unknown_review_is_a_404(api: TestClient) -> None:
+    response = api.get(f"{REVIEWS}rev_nope/workbook/")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == ErrorCode.REVIEW_NOT_FOUND
+
+
+def test_a_deleted_reviews_workbook_can_no_longer_be_downloaded(
+    api: TestClient, workbook: bytes
+) -> None:
+    review_id = _finish(api, workbook)
+    api.delete(f"{REVIEWS}{review_id}/")
+
+    response = api.get(f"{REVIEWS}{review_id}/workbook/")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == ErrorCode.REVIEW_NOT_FOUND
 
 
 def test_the_evidence_register_reports_every_expected_layer(

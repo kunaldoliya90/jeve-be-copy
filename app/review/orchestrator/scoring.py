@@ -42,7 +42,7 @@ def score_review(
                 weight=spec.weight,
                 method=spec.method,
                 score=round(value, 1),
-                reason=_reason(spec.method, checks, figures),
+                reason=_reason(checks, figures),
             )
         )
 
@@ -121,20 +121,31 @@ def _by_impact_share(figures: tuple[Figure, ...], *, fallback: float) -> float:
     return float(Decimal(_FULL) * (Decimal(1) - share))
 
 
-def _reason(method: ScoringMethod, checks: list[CheckOutcome], figures: tuple[Figure, ...]) -> str:
-    """One line a reviewer can act on: what drove this area's score."""
+def _reason(checks: list[CheckOutcome], figures: tuple[Figure, ...]) -> str:
+    """One sentence a reviewer can read without translating it first: what drove this area's
+    score, in the decisive figure's own words.
+
+    Nothing else is prepended. The check count, how many are waiting on a person and which
+    one was weakest used to open this sentence as a semicolon-separated tally — accurate, but
+    not something a business reader parses, and it is already on the card either way: the
+    tile's own badges and its check list say all of that. This is the one sentence worth
+    reading in full, so it is the only one here.
+    """
     if not checks:
         return "No check ran for this area."
-
-    weakest = min(checks, key=lambda outcome: outcome.final_status.value)
-    waiting = sum(1 for outcome in checks if outcome.needs_review)
     decisive = next((figure for figure in figures if figure.decisive and figure.summary), None)
+    return _sentence(decisive.summary) if decisive else ""
 
-    parts = [f"{len(checks)} check(s)"]
-    if waiting:
-        parts.append(f"{waiting} waiting for a person")
-    if method is ScoringMethod.WEAKEST_CHECK:
-        parts.append(f"weakest is {weakest.check_id} ({weakest.final_status.value})")
-    if decisive:
-        parts.append(decisive.summary)
-    return "; ".join(parts)
+
+def _sentence(text: str) -> str:
+    """Capitalised, and ended with a full stop if it did not already have one.
+
+    A tool's own summary is written to stand alone mid-sentence ("4 of 6 expected evidence
+    layers are present"), not to open a card by itself, so this is the only polish applied —
+    never a reword, since the words themselves are the tool's to own.
+    """
+    text = text.strip()
+    if not text:
+        return text
+    text = text[0].upper() + text[1:]
+    return text if text[-1] in ".!?" else f"{text}."

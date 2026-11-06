@@ -11,6 +11,7 @@ a review tool to mislead.
 """
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections.abc import AsyncIterator, Sequence
@@ -402,6 +403,25 @@ class ReviewOrchestrator:
             if not run.subscribers:
                 del self._runs[run.review_id]
 
+    async def shutdown(self) -> None:
+        """Cancel every review still running, and wait for each to actually stop.
+
+        Without this, a review task started moments before the process exits keeps running
+        on the event loop after the app that owns it is gone — and if it reaches step 20
+        before the loop itself is torn down, it still writes its record. In production that
+        is a review silently finishing into a worker nobody is serving from any more; in a
+        test it is a write that lands after the test's own fixtures (its temp directory
+        among them) have already been torn down, landing in whatever directory the process
+        happens to be in by then. Cancelling here means a review either finished before
+        shutdown or never got the chance to write at all - never a write that outlives it.
+        """
+        tasks = list(self._tasks)
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
     def live_runs(self) -> list[ReviewRun]:
         """Reviews this worker still holds, newest first.
 
@@ -584,6 +604,7 @@ class ReviewOrchestrator:
                 run,
                 binding,
                 measured,
+                content,
                 declared=je_type,
                 name="Could not be mapped",
                 detail={"provisional": True, "unbound": ", ".join(binding.unbound_tables)},
@@ -660,6 +681,7 @@ class ReviewOrchestrator:
                 run,
                 binding,
                 measured,
+                content,
                 declared=je_type,
                 name="Type not recognised",
                 detail={"provisional": True, "why": "; ".join(recognised.rejected[:3])},
@@ -995,7 +1017,6 @@ class ReviewOrchestrator:
             pack,
             (
                 *_identification_notes(run, recognised, je_spec),
-                *verdict.notes,
                 *_plan_notes(checked),
                 *_cluster_notes(clusters, pack),
             ),
@@ -1027,7 +1048,7 @@ class ReviewOrchestrator:
 
         # --- step 20: the record, written once and never updated ---
         await self._step(run, "20", "Storing the record")
-        self._persist(run, outcomes)
+        self._persist(run, outcomes, content)
 
         await self._emit(
             run,
@@ -1334,6 +1355,7 @@ class ReviewOrchestrator:
         run: ReviewRun,
         binding: BindResult,
         profile: WorkbookProfile,
+        content: bytes,
         *,
         declared: str | None,
         name: str,
@@ -1354,10 +1376,10 @@ class ReviewOrchestrator:
         run.status = "needs_review"
         run.progress_pct = 100
         run.step = "20"
-        self._persist(run, {})
+        self._persist(run, {}, content)
         await self._emit(run, SSEEvent.REVIEW_COMPLETED, step="20", name=name, detail=detail)
 
-    def _persist(self, run: ReviewRun, outcomes: dict[str, CheckOutcome]) -> None:
+    def _persist(self, run: ReviewRun, outcomes: dict[str, CheckOutcome], content: bytes) -> None:
         """Store the finished review with the trail that lets it be re-read later.
 
         Never fatal. A review that produced a result and could not be written is still a
@@ -1412,6 +1434,16 @@ class ReviewOrchestrator:
             self._store.write(result, file_name=run.file_name, reuse_key=run.reuse_key)
         except (OSError, FileExistsError, ValueError):
             logger.exception("review %s completed but could not be stored", run.review_id)
+            return
+
+        try:
+            self._store.write_workbook(run.review_id, content)
+        except (OSError, FileExistsError):
+            # Never fatal, and never retried: the review record above is already written
+            # and is what makes this a completed review. Losing the reopenable copy means
+            # a reviewer cannot download the original file back, which is worth logging
+            # loudly, but it must not undo a result that already exists.
+            logger.exception("review %s stored but its workbook could not be kept", run.review_id)
 
     # ------------------------------------------------------------------ progress
 

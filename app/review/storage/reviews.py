@@ -35,6 +35,7 @@ pinning it to a model would make every stored index a migration."""
 logger = logging.getLogger(__name__)
 
 REVIEWS_DIR: Final = "reviews"
+WORKBOOKS_DIR: Final = "workbooks"
 INDEX_FILE: Final = "index.json"
 REUSE_FILE: Final = "reuse_index.json"
 _TEMP_SUFFIX: Final = ".partial"
@@ -54,11 +55,13 @@ class ReviewStore:
     def __init__(self, root: Path) -> None:
         self._root = root
         self._records = root / REVIEWS_DIR
+        self._workbooks = root / WORKBOOKS_DIR
         self._lock = threading.Lock()
 
     def initialise(self) -> None:
         """Create the directories. Called once at startup, never on the request path."""
         self._records.mkdir(parents=True, exist_ok=True)
+        self._workbooks.mkdir(parents=True, exist_ok=True)
         for name in (INDEX_FILE, REUSE_FILE):
             path = self._root / name
             if not path.exists():
@@ -79,6 +82,7 @@ class ReviewStore:
             index[result.review_id] = {
                 "review_id": result.review_id,
                 "file_name": file_name,
+                "document_number": _document_number(file_name),
                 "je_type": result.je_type,
                 "je_type_variant": result.entry.je_type_variant if result.entry else None,
                 "period": result.entry.period if result.entry else None,
@@ -143,6 +147,36 @@ class ReviewStore:
             logger.error("recalculation rows for %s could not be parsed: %s", review_id, exc)
             return None
 
+    def write_workbook(self, review_id: str, content: bytes) -> None:
+        """Store the exact bytes the review was run on, so it can be opened again later.
+
+        Refuses to overwrite, the same as every other write-once file beside a review
+        record: the bytes a reviewer opens in March must be the bytes the system scored in
+        February.
+        """
+        path = self._workbooks / review_id
+        if path.exists():
+            raise FileExistsError(f"workbook for review {review_id} is already stored")
+        temp = path.with_name(path.name + _TEMP_SUFFIX)
+        temp.write_bytes(content)
+        temp.replace(path)
+
+    def read_workbook(self, review_id: str) -> bytes | None:
+        """The stored workbook's exact bytes, or ``None`` when none were kept for it.
+
+        ``None`` covers two different reviews the same way on purpose: one stored before
+        this existed, and one whose file failed to persist. Either way there is nothing to
+        serve, and the caller's 404 is the honest answer for both.
+        """
+        path = self._workbooks / review_id
+        if not path.is_file():
+            return None
+        try:
+            return path.read_bytes()
+        except OSError as exc:  # pragma: no cover - a permissions or locking fault
+            logger.error("workbook for review %s could not be read: %s", review_id, exc)
+            return None
+
     def delete(self, review_id: str) -> bool:
         """Remove one stored review. Returns False when there was nothing to remove.
 
@@ -185,6 +219,13 @@ class ReviewStore:
                 rows_path.unlink()
             except OSError as exc:  # pragma: no cover - a permissions or locking fault
                 logger.error("recalculation rows for %s could not be removed: %s", review_id, exc)
+
+        workbook_path = self._workbooks / review_id
+        if workbook_path.is_file():
+            try:
+                workbook_path.unlink()
+            except OSError as exc:  # pragma: no cover - a permissions or locking fault
+                logger.error("stored workbook for %s could not be removed: %s", review_id, exc)
 
         removed = existed or indexed is not None
         if removed:
@@ -318,6 +359,19 @@ def _write_atomic(path: Path, payload: object) -> None:
 def utc_now() -> datetime:
     """One clock for the whole harness, always timezone-aware."""
     return datetime.now(UTC)
+
+
+def _document_number(file_name: str) -> str | None:
+    """The entry's document number: the name the workbook was uploaded under, less its suffix.
+
+    Mirrors ``orchestrator.document_number_of`` exactly, duplicated rather than imported to
+    avoid a storage module depending on the orchestrator. Cut at the last dot rather than
+    handed to ``pathlib``, which reads a leading-dot name like ``.xlsx`` as having no suffix
+    at all and would otherwise report that whole name as the document number.
+    """
+    name = file_name.strip()
+    stem = name.rsplit(".", 1)[0].strip() if "." in name else name
+    return stem or None
 
 
 def _decimal_str(value: Decimal | None) -> str | None:

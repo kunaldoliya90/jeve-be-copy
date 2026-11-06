@@ -103,6 +103,40 @@ def test_write_still_refuses_to_overwrite(store: ReviewStore) -> None:
         store.write(_result("rev_1"), file_name="je.xlsx", reuse_key=None)
 
 
+def test_write_includes_the_document_number_on_the_index_row(store: ReviewStore) -> None:
+    store.write(_result("rev_1"), file_name="236264.xlsx", reuse_key=None)
+
+    rows, _ = store.list()
+
+    assert rows[0]["document_number"] == "236264"
+
+
+def test_workbook_round_trips(store: ReviewStore) -> None:
+    store.write_workbook("rev_1", b"the workbook's bytes")
+
+    assert store.read_workbook("rev_1") == b"the workbook's bytes"
+
+
+def test_workbook_refuses_to_overwrite(store: ReviewStore) -> None:
+    store.write_workbook("rev_1", b"first")
+
+    with pytest.raises(FileExistsError):
+        store.write_workbook("rev_1", b"second")
+
+
+def test_read_workbook_is_none_when_nothing_was_stored(store: ReviewStore) -> None:
+    assert store.read_workbook("rev_nope") is None
+
+
+def test_delete_removes_the_stored_workbook(store: ReviewStore) -> None:
+    store.write(_result("rev_1"), file_name="je.xlsx", reuse_key=None)
+    store.write_workbook("rev_1", b"the workbook's bytes")
+
+    store.delete("rev_1")
+
+    assert store.read_workbook("rev_1") is None
+
+
 def test_a_record_stored_before_the_risk_rating_existed_still_reads() -> None:
     """Records are write-once, so an older one can never be given the new field.
 
