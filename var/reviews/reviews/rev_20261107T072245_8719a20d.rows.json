@@ -7,12 +7,12 @@
       "company_code": "1073",
       "staffing_type": "Regular/Expat/Comm Eligible"
     },
-    "recomputed": "59631.51",
+    "recomputed": "12556.50",
     "stated": "12556.5",
     "stated_cell": "AH9",
-    "difference": "47075.01",
-    "difference_pct": 374.90550710787244,
-    "kind": "stated_differs",
+    "difference": "0.00",
+    "difference_pct": 0.0,
+    "kind": null,
     "inputs": [
       {
         "id": "cp_provision",
@@ -46,7 +46,7 @@
         "id": "daily_rate",
         "label": "Daily Salary (RTT Rate)",
         "cell": "W9",
-        "value": "100000",
+        "value": "311.7288888888889",
         "unit": "currency_per_day"
       },
       {
@@ -83,7 +83,7 @@
         "id": "rtt_amount",
         "label": "The RTT accrual, rebuilt from the days and the rate. A twelfth of this is what the formula adds to the CP provision.\n",
         "cell": "AC9",
-        "value": "566666.6666666666666666666666",
+        "value": "1766.463703703703766666666666",
         "unit": "currency"
       },
       {
@@ -94,26 +94,7 @@
         "unit": "currency"
       }
     ],
-    "flags": [
-      {
-        "check_id": "salary_per_day_follows_methodology",
-        "label": "Does the leave balance times the daily rate give the accrual the workbook states, employee by employee?",
-        "cell": "AC9",
-        "expected": "566666.666666666700000",
-        "actual": "1766.4637037037",
-        "difference": "564900.202962963000000",
-        "why": "Does the leave balance times the daily rate give the accrual the workbook states, employee by employee?: expected 566666.666666666700000, the workbook states 1766.4637037037."
-      },
-      {
-        "check_id": "rtt_provision_values_the_balance",
-        "label": "Does the RTT provision the workbook states in money equal the RTT balance in days at the employee's daily rate?",
-        "cell": "T9",
-        "expected": "900000",
-        "actual": "2805.56",
-        "difference": "897194.44",
-        "why": "Does the RTT provision the workbook states in money equal the RTT balance in days at the employee's daily rate?: expected 900000, the workbook states 2805.56."
-      }
-    ]
+    "flags": []
   },
   {
     "row": 10,
