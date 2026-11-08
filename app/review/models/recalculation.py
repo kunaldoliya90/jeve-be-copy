@@ -235,6 +235,7 @@ class RelatedRecalcCheck(BaseModel):
 
     check_id: str = Field(..., min_length=1)
     label: str = Field(default="", description="The check's own question, for a reader's header")
+    short: str = Field(default="", description="The check in two or three words, where it has one")
     summary: str = Field(default="", description="The check's own conclusion, written by code")
     citations: tuple[RecalcCitation, ...] = Field(
         default=(),
@@ -423,6 +424,88 @@ class RecalcExplained(BaseModel):
     caveats: tuple[str, ...] = Field(default=(), description="What a reader should be told")
 
 
+class WalkthroughStep(BaseModel):
+    """One step of the formula, in words and - where the step computes - in numbers."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str = Field(default="")
+    line: str = Field(default="", description="The step as one plain sentence")
+    label: str = Field(default="", description="The step's name in the worked example")
+
+
+class Walkthrough(BaseModel):
+    """The formula in one line and a numbered list, carried from the JE type as written."""
+
+    model_config = ConfigDict(frozen=True)
+
+    total: str = Field(default="")
+    stated_label: str = Field(default="", description="What a record's own amount is called")
+    steps: tuple[WalkthroughStep, ...] = Field(default=())
+    footnote: str = Field(default="")
+
+
+class RowFault(BaseModel):
+    """The input on a record that does not reconcile, and what it would have to be.
+
+    ``expected`` is solved, not judged: it is the value that would make this record's own
+    stated amount come out of the approved formula, found by re-running that formula and
+    checked by re-running it again at the answer. It is evidence of where to look, never a
+    finding that the preparer typed the wrong number - which is why the report asks for the
+    right value rather than announcing it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    input_id: str = Field(..., min_length=1)
+    label: str = Field(default="", description="The column's own header, as the file spells it")
+    cell: str = Field(default="", description="Where to open the file")
+    column: str = Field(default="", description="That cell's column letter")
+    value: Decimal | None = Field(default=None, description="What the record carries")
+    expected: Decimal | None = Field(default=None, description="What would make the record agree")
+    unit: RecalcUnit = Field(default=RecalcUnit.CURRENCY)
+
+
+class RowExampleStep(BaseModel):
+    """One step of the formula carried out on the record, both ways.
+
+    ``correct`` runs the step with the solved value in place of the one the file carries;
+    ``actual`` runs it as the file stands. Where a step is unaffected the two agree and
+    ``differs`` is false, so the report can print the number once rather than twice.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    label: str = Field(default="")
+    correct: str = Field(default="")
+    actual: str = Field(default="")
+    differs: bool = Field(default=False)
+
+
+class RowDiagnosis(BaseModel):
+    """One record's difference, traced to the input that carries it.
+
+    Built only where a record states an amount the formula does not reproduce *and* a
+    single input can be solved to reconcile it. Where no single input explains the record -
+    two wrong inputs, a formula the file does not follow at all - this is ``None`` and the
+    report says what it always said: the figures, the citation, and the difference.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    row: int = Field(..., ge=1)
+    sheet: str = Field(default="")
+    fault: RowFault | None = Field(default=None)
+    where: str = Field(default="", description="Sheet, row and column, in a sentence")
+    problem: str = Field(default="", description="The value, and what it would have to be")
+    impact: str = Field(default="", description="What it does to the record and to the entry")
+    next_step: str = Field(default="", description="The one thing to do about it")
+    steps: tuple[RowExampleStep, ...] = Field(default=())
+    stated: Decimal | None = Field(default=None)
+    recomputed: Decimal | None = Field(default=None)
+    difference: Decimal | None = Field(default=None)
+
+
 class RecalcBasis(BaseModel):
     """What was recalculated, under which rules. The audit trail of the work paper.
 
@@ -580,6 +663,16 @@ class EntryRecalculation(BaseModel):
         description=(
             "What the recalculation could not do, named rather than left as a blank section. "
             "An input the workbook computes elsewhere is a limit of the evidence, not a pass."
+        ),
+    )
+    walkthrough: Walkthrough | None = Field(
+        default=None, description="The formula in one line and a numbered list, as written"
+    )
+    row_diagnosis: RowDiagnosis | None = Field(
+        default=None,
+        description=(
+            "The record carrying the difference, traced to one input and walked through "
+            "both ways. None where no single input reconciles the record."
         ),
     )
     duration_ms: int = Field(default=0, ge=0, description="How long the pass over the rows took")

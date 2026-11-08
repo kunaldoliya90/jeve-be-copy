@@ -29,6 +29,7 @@ from api.pydanticmodels.review_models import (
     SheetView,
     WorkbookView,
     area_status,
+    plain_area_reason,
 )
 from core.apiview import APIView
 from core.settings import config
@@ -474,9 +475,11 @@ def _areas(run: ReviewRun) -> list[AreaView]:
             method=area.method.value,
             score=area.score,
             status=area_status(
-                [outcome for outcome in run.context.outcomes.values() if outcome.area == area.area]
+                [outcome for outcome in run.context.outcomes.values() if outcome.area == area.area],
+                method=area.method,
+                recalculation=run.recalculation,
             ),
-            reason=area.reason,
+            reason=plain_area_reason(area.area, area.reason, run.recalculation),
             checks=[
                 _check_view(outcome, questions.get(outcome.check_id), run)
                 for outcome in run.context.outcomes.values()

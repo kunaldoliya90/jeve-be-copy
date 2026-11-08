@@ -28,6 +28,18 @@ class ScoringMethod(StrEnum):
     """Scored on the share of rows excepted, not on the worst row."""
     IMPACT_SHARE = "impact_share"
     """Scored on the share of the entry's value the exceptions move."""
+    ENTRY_TOLERANCE = "entry_tolerance"
+    """Scored on whether the entry as a whole rebuilds within tolerance.
+
+    The question this area is asked at entry level is whether the number that was posted is
+    the number the working supports. The work paper answers exactly that, over every record
+    it could read, under the tolerance the business states - so where it answers yes, the
+    area is a pass however many individual checks inside it are still being argued about.
+
+    It falls back to the weakest check whenever the work paper cannot answer: no
+    recalculation, or a comparison that had no booked side to make. A missing answer is
+    never read as a yes.
+    """
 
 
 class AreaScore(BaseModel):

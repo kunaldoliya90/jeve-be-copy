@@ -1369,7 +1369,7 @@ def test_the_entry_is_rebuilt_from_its_inputs_and_tied_to_the_posting(
     # ``rtt_amount`` is a declared stage rather than a column since version 11, so there is
     # no header to substitute for it; each stage carries its own substituted expression.
     assert basis["formula_in_headers"] == "Total Provision\nCP + Rebuilt RTT accrual / 12"
-    assert Decimal(basis["tolerance_pct"]) == Decimal("1")
+    assert Decimal(basis["tolerance_pct"]) == Decimal("0.01")
     assert basis["provisional_basis"] is True, "the business has not signed the basis off"
 
     # The booked side is read from the posted entry's own lines, which is what makes the

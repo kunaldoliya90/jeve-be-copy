@@ -1,0 +1,4009 @@
+{
+  "review_id": "rev_20261108T175958_a2f6395f",
+  "status": "needs_review",
+  "je_type": "vacation-accrual-france",
+  "entry": {
+    "document_number": "305800 - Copy (8)",
+    "risk_rating": "high",
+    "je_type": "vacation-accrual-france",
+    "je_type_name": "France vacation accrual",
+    "je_type_variant": "cp_rtt_france",
+    "process": "Record to Report",
+    "sub_process": "Payroll",
+    "period": "2026 P07"
+  },
+  "score": {
+    "total": 30.0,
+    "band": "High risk",
+    "risk_rating": "high",
+    "areas": [
+      {
+        "area": "evidence_completeness",
+        "weight": 30,
+        "method": "baseline_share",
+        "score": 0.0,
+        "reason": "1 check(s); 1 waiting for a person; 4 of 6 expected evidence layers are present in the workbook; missing: approval, vacation_provision_file"
+      },
+      {
+        "area": "evidence_appropriateness",
+        "weight": 10,
+        "method": "weakest_check",
+        "score": 100.0,
+        "reason": "1 check(s); weakest is evidence_matches_je_type (pass); Could not be computed: evidence appropriateness is not currently checked"
+      },
+      {
+        "area": "calculation_accuracy",
+        "weight": 30,
+        "method": "weakest_check",
+        "score": 0.0,
+        "reason": "22 check(s); 9 waiting for a person; weakest is salary_per_day_follows_methodology (fail); 2,273 employee rows carry only 1 distinct reference(s), so the column is redacted or constant and the population cannot be reconciled against the master"
+      },
+      {
+        "area": "period",
+        "weight": 10,
+        "method": "weakest_check",
+        "score": 50.0,
+        "reason": "2 check(s); 2 waiting for a person; weakest is reversal_is_configured (partial); 1 distinct fiscal period(s) on the entry: 07; 1 fiscal year(s)"
+      },
+      {
+        "area": "pii",
+        "weight": 10,
+        "method": "weakest_check",
+        "score": 100.0,
+        "reason": "1 check(s); weakest is personal_data_located (pass); No personal data on the tabs where it does not belong"
+      },
+      {
+        "area": "trend",
+        "weight": 10,
+        "method": "weakest_check",
+        "score": 50.0,
+        "reason": "1 check(s); 1 waiting for a person; weakest is trend_within_tolerance (unable_to_validate); No prior review of this entry type fell inside the 3-month lookback, so there is nothing yet to compare the posted amount against"
+      }
+    ],
+    "provisional": true
+  },
+  "checks": [
+    {
+      "check_id": "evidence_baseline",
+      "area": "evidence_completeness",
+      "final_status": "missing_evidence",
+      "needs_review": true,
+      "review_reasons": [
+        "incomplete_row_coverage",
+        "status_overridden",
+        "challenge_disagreed"
+      ],
+      "verdict": {
+        "check_id": "evidence_baseline",
+        "status": "pass",
+        "conclusion": "The evidence register figure is marked ok, but it also reports only 4 of 6 expected evidence layers present and missing approval and vacation_provision_file. This is therefore only a figure-driven pass with noted missing evidence layers.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "medium",
+            "text": "Evidence baseline: 4 of 6 expected evidence layers are present; approval and vacation_provision_file are missing, which limits support for later re-performance.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "evidence_baseline",
+        "agrees": false,
+        "status_should_be": "missing_evidence",
+        "reason": "The check asks whether required evidence items are present. The figure says only 4 of 6 expected evidence layers are present and identifies missing approval and vacation_provision_file, so the evidence baseline is not a pass.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "population_complete",
+      "area": "calculation_accuracy",
+      "final_status": "unable_to_validate",
+      "needs_review": true,
+      "review_reasons": [
+        "map_unverified"
+      ],
+      "verdict": null,
+      "challenge": null
+    },
+    {
+      "check_id": "classification_matches_master",
+      "area": "calculation_accuracy",
+      "final_status": "partial",
+      "needs_review": true,
+      "review_reasons": [
+        "incomplete_row_coverage",
+        "status_overridden",
+        "challenge_disagreed"
+      ],
+      "verdict": {
+        "check_id": "classification_matches_master",
+        "status": "pass",
+        "conclusion": "The classification check figure is marked ok: 2,232 classified rows were checked and 0 carried an amount on the wrong side. Coverage is partial because the rows compared do not cover every row.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Classification agreed for the rows tested: 2,232 classified rows checked, with 0 wrong-side amounts; the figure does not cover every row.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "classification_matches_master",
+        "agrees": false,
+        "status_should_be": "partial",
+        "reason": "The figure supports that 0 checked rows carried an amount on the wrong side, but it also says only 2,232 classified rows were checked out of 2,459 total rows and covers_every_row is false. The check asks whether each employee's amount is classified correctly, so the evidence is only partial.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "salary_agrees_with_source",
+      "area": "calculation_accuracy",
+      "final_status": "missing_evidence",
+      "needs_review": true,
+      "review_reasons": [
+        "incomplete_row_coverage",
+        "status_overridden",
+        "challenge_disagreed"
+      ],
+      "verdict": {
+        "check_id": "salary_agrees_with_source",
+        "status": "pass",
+        "conclusion": "The salary validation figure is marked ok for usable daily rates on employees with an RTT amount. The workbook carries no independent salary source, so the rate itself was not checked against a source.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "medium",
+            "text": "Salary source agreement was not independently proven: 731 of 731 employees with an RTT amount carry a usable daily rate, but the workbook has no independent salary source and only 731 rows were compared out of 2,273.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "salary_agrees_with_source",
+        "agrees": false,
+        "status_should_be": "missing_evidence",
+        "reason": "The check asks whether salary used agrees with the source and is effective at the date. The figure says the workbook carries no independent salary source, so the rate itself is not checked against one; it also covers only 731 compared rows out of 2,273 total rows. That is missing evidence for the source agreement part of the check.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "salary_per_day_follows_methodology",
+      "area": "calculation_accuracy",
+      "final_status": "fail",
+      "needs_review": true,
+      "review_reasons": [
+        "untraced_number"
+      ],
+      "verdict": {
+        "check_id": "salary_per_day_follows_methodology",
+        "status": "fail",
+        "conclusion": "The re-performance figure is marked not ok: balance in days times daily rate agreed on 2,272 of 2,273 rows and 1 row differed by 564900.202962963000000. The cited exception is at AC9, where expected 566666.666666666700000 did not agree to actual 1766.4637037037.",
+        "findings": [
+          {
+            "kind": "exception",
+            "severity": "high",
+            "text": "Salary-per-day methodology exception: at AC9, balance in days times the daily rate expected 566666.666666666700000, actual was 1766.4637037037, difference 564900.202962963000000; this matters because an amount not rebuilt from its own inputs has no basis.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "salary_per_day_follows_methodology",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The figure is not ok and reports 1 differing row with total difference 564900.202962963000000, including AC9 expected 566666.666666666700000 and actual 1766.4637037037. Fail is supported.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "leave_balance_recalculates",
+      "area": "calculation_accuracy",
+      "final_status": "unable_to_validate",
+      "needs_review": true,
+      "review_reasons": [
+        "map_unverified"
+      ],
+      "verdict": null,
+      "challenge": null
+    },
+    {
+      "check_id": "rtt_balance_rebuilds",
+      "area": "calculation_accuracy",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "rtt_balance_rebuilds",
+        "status": "pass",
+        "conclusion": "The RTT balance re-performance passed and covered every row. RTT balance days agreed on 2,273 of 2,273 rows with 0 exceptions.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "RTT balance days re-performed successfully for every row: 2,273 of 2,273 rows agreed, with 0 exceptions.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "rtt_balance_rebuilds",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The figure covers every row and reports RTT balance days agree on 2,273 of 2,273 rows with 0 exceptions.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "entry_total_recalculates",
+      "area": "calculation_accuracy",
+      "final_status": "fail",
+      "needs_review": true,
+      "review_reasons": [
+        "incomplete_row_coverage",
+        "untraced_number",
+        "challenge_disagreed"
+      ],
+      "verdict": {
+        "check_id": "entry_total_recalculates",
+        "status": "pass",
+        "conclusion": "The decisive entry total figure is marked ok: the rebuilt amount was 27952887.64 against 27905812.64 booked, a difference of 47075.00 inside tolerance 279058.13. However, only 2,271 of 2,273 records were rebuilt, so agreement is partial rather than complete.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "medium",
+            "text": "Entry total recalculation is a partial pass by the decisive figure: rebuilt from 2,271 of 2,273 records, 27952887.64 compared with 27905812.64 booked, difference 47075.00 inside tolerance 279058.13; 2 records could not be rebuilt at all.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          },
+          {
+            "kind": "exception",
+            "severity": "medium",
+            "text": "Row-level re-performance exception: AH9 stated 12556.5 with difference 47075.01; 2,271 of 2,273 records were rebuilt and 2,270 agreed, so row-level completeness was not achieved.",
+            "evidence_ids": [
+              "F-03"
+            ]
+          },
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Formula health observation: formulas behind 12 columns were examined and 11 were not calculated; formula defects are observations, not the sole reason for failure.",
+            "evidence_ids": [
+              "F-02"
+            ]
+          },
+          {
+            "kind": "exception",
+            "severity": "high",
+            "text": "RTT amount subcheck exception: rtt_amount agreed on 2,272 of 2,273 rows, differing by 564900.2029629629666666666666 in total; this matters because the entry total depends on the row-level approved formula.",
+            "evidence_ids": [
+              "F-06"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "entry_total_recalculates",
+        "agrees": false,
+        "status_should_be": "fail",
+        "reason": "The check asks whether the amount posted can be regenerated from the approved formula record by record and whether the total agrees. The decisive figure says only 2,271 of 2,273 records were rebuilt and 2 records could not be rebuilt at all. Another figure reports only 2,270 of the 2,271 rebuilt records agreed, with a difference of 47075.01. A further figure reports rtt_amount differed on 1 row by",
+        "evidence_ids": [
+          "F-01",
+          "F-03",
+          "F-06"
+        ]
+      }
+    },
+    {
+      "check_id": "accrual_reperforms",
+      "area": "calculation_accuracy",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "accrual_reperforms",
+        "status": "pass",
+        "conclusion": "The accrual re-performance passed and covered every row. FTE plus non-FTE against the stated total agreed on 2,273 of 2,273 rows with 0 exceptions.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Accrual re-performance agreed for every row: FTE plus non-FTE against the stated total agreed on 2,273 of 2,273 rows, with 0 exceptions.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "accrual_reperforms",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The figure covers every row and reports FTE plus non-FTE against the stated total agreed on 2,273 of 2,273 rows with 0 exceptions.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "negative_accruals_explained",
+      "area": "calculation_accuracy",
+      "final_status": "fail",
+      "needs_review": true,
+      "review_reasons": [
+        "negative_accrual",
+        "untraced_number"
+      ],
+      "verdict": {
+        "check_id": "negative_accruals_explained",
+        "status": "fail",
+        "conclusion": "The negative accrual scan is marked not ok. 1 employee row carries a negative total_accrual of -1074.35, with financial impact 1074.35.",
+        "findings": [
+          {
+            "kind": "exception",
+            "severity": "medium",
+            "text": "Negative accrual exception: AH230 carries a negative total_accrual of -1074.35, financial impact 1074.35; this matters because a negative accrual requires support as a genuine adjustment rather than bad data or mapping error.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "negative_accruals_explained",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "Fail is supported because 1 employee row carries a negative total_accrual of -1074.35, with financial impact 1074.35.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "accrual_composition_reperforms",
+      "area": "calculation_accuracy",
+      "final_status": "fail",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "accrual_composition_reperforms",
+        "status": "fail",
+        "conclusion": "The composition re-performance figure is marked not ok. CP provision plus a twelfth of RTT accrual agreed on 2,271 of 2,273 rows, but 2 rows had no comparable figure.",
+        "findings": [
+          {
+            "kind": "exception",
+            "severity": "medium",
+            "text": "Accrual composition exception: CP provision plus a twelfth of RTT accrual could not be compared for 2 rows out of 2,273; this matters because the employee total does not fully tie to its CP and RTT components.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "accrual_composition_reperforms",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "Fail is supported because the figure is not ok: 2,271 of 2,273 rows agreed, but 2 rows had no comparable figure.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "cp_provision_rebuilds",
+      "area": "calculation_accuracy",
+      "final_status": "fail",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "cp_provision_rebuilds",
+        "status": "fail",
+        "conclusion": "The CP provision rebuild figure is marked not ok. Prior plus current period CP provision agreed on 2,271 of 2,273 rows, but 2 rows had no comparable figure.",
+        "findings": [
+          {
+            "kind": "exception",
+            "severity": "medium",
+            "text": "CP provision rebuild exception: prior plus current period CP provision could not be compared for 2 rows out of 2,273; this matters because the CP provision does not fully tie to its own two periods.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "cp_provision_rebuilds",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "Fail is supported because the figure is not ok: 2,271 of 2,273 rows agreed, but 2 rows had no comparable figure.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "cp_charges_tie_to_the_rate",
+      "area": "calculation_accuracy",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "cp_charges_tie_to_the_rate",
+        "status": "pass",
+        "conclusion": "The CP employer charges re-performance passed and covered every row. Employer charges on CP provision at the stated rate agreed on 2,273 of 2,273 rows with 0 exceptions.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "CP employer charges tied to the stated rate for every row: 2,273 of 2,273 rows agreed, with 0 exceptions.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "cp_charges_tie_to_the_rate",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The figure covers every row and reports employer charges on the CP provision at the stated rate agreed on 2,273 of 2,273 rows with 0 exceptions.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "cp_provision_total_includes_its_charges",
+      "area": "calculation_accuracy",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "cp_provision_total_includes_its_charges",
+        "status": "pass",
+        "conclusion": "The total CP provision re-performance passed and covered every row. CP provision plus employer charges agreed to the stated total on 2,273 of 2,273 rows with 0 exceptions.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Total CP provision includes charges for every row: CP provision plus employer charges agreed on 2,273 of 2,273 rows, with 0 exceptions.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "cp_provision_total_includes_its_charges",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The figure covers every row and reports CP provision plus its employer charges against the stated total agreed on 2,273 of 2,273 rows with 0 exceptions.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "rtt_provision_values_the_balance",
+      "area": "calculation_accuracy",
+      "final_status": "fail",
+      "needs_review": true,
+      "review_reasons": [
+        "untraced_number"
+      ],
+      "verdict": {
+        "check_id": "rtt_provision_values_the_balance",
+        "status": "fail",
+        "conclusion": "The RTT provision valuation figure is marked not ok. RTT balance in days times the daily rate agreed on 2,272 of 2,273 rows and 1 row differed by 897194.44.",
+        "findings": [
+          {
+            "kind": "exception",
+            "severity": "high",
+            "text": "RTT provision valuation exception: at T9, expected 900000, actual 2805.56, difference 897194.44; this matters because the RTT liability was valued at a rate or balance other than the workbook inputs for that employee.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "rtt_provision_values_the_balance",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "Fail is supported because RTT balance in days times the daily rate agreed on 2,272 of 2,273 rows and 1 row differed by 897194.44; row 9 shows expected 900000 and actual 2805.56.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "rtt_charges_tie_to_the_rate",
+      "area": "calculation_accuracy",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "rtt_charges_tie_to_the_rate",
+        "status": "pass",
+        "conclusion": "The RTT employer charges re-performance passed and covered every row. Employer charges on the RTT provision at the stated rate agreed on 2,273 of 2,273 rows with 0 exceptions.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "RTT employer charges tied to the stated rate for every row: 2,273 of 2,273 rows agreed, with 0 exceptions.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "rtt_charges_tie_to_the_rate",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The figure covers every row and reports employer charges on the RTT provision at the stated rate agreed on 2,273 of 2,273 rows with 0 exceptions.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "rtt_provision_total_includes_its_charges",
+      "area": "calculation_accuracy",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "rtt_provision_total_includes_its_charges",
+        "status": "pass",
+        "conclusion": "The total RTT provision re-performance passed and covered every row. RTT provision plus employer charges agreed against the stated total on 2,273 of 2,273 rows with 0 exceptions.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Total RTT provision includes charges for every row: RTT provision plus employer charges agreed on 2,273 of 2,273 rows, with 0 exceptions.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "rtt_provision_total_includes_its_charges",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The figure covers every row and reports RTT provision plus its employer charges against the stated total agreed on 2,273 of 2,273 rows with 0 exceptions.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "prior_period_cp_balance_ties",
+      "area": "calculation_accuracy",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "prior_period_cp_balance_ties",
+        "status": "pass",
+        "conclusion": "The prior-period CP balance re-performance passed and covered every row. Prior period CP earned minus taken agreed to the stated balance on 2,273 of 2,273 rows with 0 exceptions.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Prior period CP balance tied for every row: prior period CP earned minus taken agreed on 2,273 of 2,273 rows, with 0 exceptions.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "prior_period_cp_balance_ties",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The figure covers every row and reports prior period CP earned minus taken against the stated balance agreed on 2,273 of 2,273 rows with 0 exceptions.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "fte_split_aggregates",
+      "area": "calculation_accuracy",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "fte_split_aggregates",
+        "status": "pass",
+        "conclusion": "The FTE split aggregation re-performance passed and covered every row. FTE plus non-FTE against the stated total agreed on 2,273 of 2,273 rows with 0 exceptions.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "FTE split aggregated for every row: FTE plus non-FTE agreed to the stated total on 2,273 of 2,273 rows, with 0 exceptions.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "fte_split_aggregates",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The figure covers every row and reports FTE plus non-FTE against the stated total agreed on 2,273 of 2,273 rows with 0 exceptions.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "working_ties_to_posting",
+      "area": "calculation_accuracy",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "working_ties_to_posting",
+        "status": "pass",
+        "conclusion": "The rollup chain figure is marked ok. Calculation to JE posting compared 4 groups and 0 differed.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Employee-level calculation tied to the posting by company code: 4 groups compared and 0 differed; the figure cites 27905812.64 and 27905812.6399999985066.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "working_ties_to_posting",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The rollup figure reports calculation to JE posting compared 4 groups and 0 differed, supporting the company-code tie-out.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "accounts_mapped_correctly",
+      "area": "calculation_accuracy",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "accounts_mapped_correctly",
+        "status": "pass",
+        "conclusion": "The account mapping figure is marked ok. 3 accounts used were checked against the 3 accounts the master allows.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Accounts mapped correctly by the figure: 3 accounts used against 3 the master allows, with 0 exceptions.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "accounts_mapped_correctly",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The account mapping figure reports 3 accounts used against 3 the master allows, with no exceptions.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "entry_balances",
+      "area": "calculation_accuracy",
+      "final_status": "pass",
+      "needs_review": true,
+      "review_reasons": [
+        "untraced_number"
+      ],
+      "verdict": {
+        "check_id": "entry_balances",
+        "status": "pass",
+        "conclusion": "The balance figure is marked ok. Debits and credits net to 1.30066E-8 across 428 lines in 4 groups, with 0 exceptions.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Entry balance passed by the figure: debits and credits net to 1.30066E-8 across 428 lines in 4 groups, with 0 exceptions.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "entry_balances",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The balance figure is marked ok and reports debits and credits net to 1.30066E-8 across 428 lines in 4 groups, with 0 exceptions.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "stated_totals_agree",
+      "area": "calculation_accuracy",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "stated_totals_agree",
+        "status": "pass",
+        "conclusion": "The control totals figures are marked ok for both the hash total and JE total. The hash_total states 27905812.639999997 and agrees on the debit side; the je_total states 0 and agrees on the net.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Hash total control passed: hash_total states 27905812.639999997; the lines give 1.30066E-8 net, 55811625.2799999840066 gross, and 27905812.6399999985066 on the debit side, with difference -1.5066E-9.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          },
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "JE total control passed: je_total states 0; the lines give 1.30066E-8 net, 55811625.2799999840066 gross, and 27905812.6399999985066 on the debit side, with difference -1.30066E-8.",
+            "evidence_ids": [
+              "F-02"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "stated_totals_agree",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The figures are marked ok: hash_total states 27905812.639999997 and agrees on the debit side, and je_total states 0 and agrees on the net.",
+        "evidence_ids": [
+          "F-01",
+          "F-02"
+        ]
+      }
+    },
+    {
+      "check_id": "posting_period_agrees",
+      "area": "period",
+      "final_status": "pass",
+      "needs_review": true,
+      "review_reasons": [
+        "untraced_number"
+      ],
+      "verdict": {
+        "check_id": "posting_period_agrees",
+        "status": "pass",
+        "conclusion": "The period agreement figure is marked ok. The entry has 1 distinct fiscal period and 1 fiscal year, with period 07 shown in the examples.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Posting period agreement passed: the entry has 1 distinct fiscal period and 1 fiscal year; example period 07 covers 428 lines.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "posting_period_agrees",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The period agreement figure is marked ok and reports 1 distinct fiscal period and 1 fiscal year, with period 07 shown in the example.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "reversal_is_configured",
+      "area": "period",
+      "final_status": "partial",
+      "needs_review": true,
+      "review_reasons": [
+        "challenge_disagreed"
+      ],
+      "verdict": {
+        "check_id": "reversal_is_configured",
+        "status": "pass",
+        "conclusion": "The reversal check figure is marked ok. 428 lines carry a posting date, with 0 missing reversal dates and 0 reversing on or before posting.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Reversal configuration passed: 428 lines carry a posting date, 0 have no reversal date, and 0 reverse on or before posting.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "reversal_is_configured",
+        "agrees": false,
+        "status_should_be": "partial",
+        "reason": "The figure supports only part of the check: 428 lines carry a posting date, 0 have no reversal date, and 0 reverse on or before posting. It does not evidence that the reversal uses the same accounts with opposite signs or that it is not duplicated into another period.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "methodology_unchanged",
+      "area": "observation",
+      "final_status": "unable_to_validate",
+      "needs_review": true,
+      "review_reasons": [
+        "map_unverified"
+      ],
+      "verdict": null,
+      "challenge": null
+    },
+    {
+      "check_id": "manual_updates_supported",
+      "area": "observation",
+      "final_status": "fail",
+      "needs_review": true,
+      "review_reasons": [
+        "untraced_number"
+      ],
+      "verdict": {
+        "check_id": "manual_updates_supported",
+        "status": "fail",
+        "conclusion": "The formula health figure is marked not ok. Manual update support formulas returned 87 errors, made up of value_error 78 and na_error 9.",
+        "findings": [
+          {
+            "kind": "exception",
+            "severity": "medium",
+            "text": "Manual update support exception: formulas returned errors at 87 locations, including value_error 78 and na_error 9; examples include JE Create!E316 and JE Create!C416, which matters because typed-over or unsupported numbers may alter calculated provision legs.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "manual_updates_supported",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "Fail is supported because formula health is not ok and reports 87 errors, made up of value_error 78 and na_error 9.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "personal_data_located",
+      "area": "pii",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": {
+        "check_id": "personal_data_located",
+        "status": "pass",
+        "conclusion": "The PII scan figure is marked ok. It reports 0 personal data findings on tabs where personal data does not belong.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Personal data scan passed: 0 personal data findings were identified on tabs where it does not belong.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "personal_data_located",
+        "agrees": true,
+        "status_should_be": null,
+        "reason": "The PII scan figure is marked ok and reports 0 personal data findings on tabs where personal data does not belong.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    },
+    {
+      "check_id": "evidence_matches_je_type",
+      "area": "evidence_appropriateness",
+      "final_status": "pass",
+      "needs_review": false,
+      "review_reasons": [],
+      "verdict": null,
+      "challenge": null
+    },
+    {
+      "check_id": "trend_within_tolerance",
+      "area": "trend",
+      "final_status": "unable_to_validate",
+      "needs_review": true,
+      "review_reasons": [
+        "challenge_disagreed"
+      ],
+      "verdict": {
+        "check_id": "trend_within_tolerance",
+        "status": "pass",
+        "conclusion": "The trend check figure is marked ok. No prior review of this entry type fell inside the 3-month lookback, so there was nothing to compare the posted amount against.",
+        "findings": [
+          {
+            "kind": "observation",
+            "severity": "low",
+            "text": "Trend check passed by the figure but has no comparator: no prior review of this entry type fell inside the 3-month lookback; posted amount cited was 27905812.64.",
+            "evidence_ids": [
+              "F-01"
+            ]
+          }
+        ]
+      },
+      "challenge": {
+        "check_id": "trend_within_tolerance",
+        "agrees": false,
+        "status_should_be": "unable_to_validate",
+        "reason": "The check asks whether the posted amount falls within the agreed deviation of the trailing three-month average. The figure says no prior review of this entry type fell inside the 3-month lookback, so there is nothing to compare the posted amount against. That does not validate the trend.",
+        "evidence_ids": [
+          "F-01"
+        ]
+      }
+    }
+  ],
+  "pii_flagged": false,
+  "pii_findings": [],
+  "evidence_register": [
+    {
+      "item_id": "methodology",
+      "expected": "Documented leave-accrual methodology and assumptions.",
+      "required": true,
+      "status": "available",
+      "location": "Methodology",
+      "remediation": "Attach the methodology tab stating the calculation basis and denominator.",
+      "note": "Satisfied by Methodology.",
+      "needs_review": false
+    },
+    {
+      "item_id": "accrual_calculation",
+      "expected": "Leave balances and daily-rate working paper.",
+      "required": true,
+      "status": "available",
+      "location": "GPAY",
+      "remediation": "Attach the employee-level working that the accrual is calculated on.",
+      "note": "Satisfied by GPAY.",
+      "needs_review": false
+    },
+    {
+      "item_id": "employee_master",
+      "expected": "Employee population, status, and FTE data.",
+      "required": true,
+      "status": "available",
+      "location": "MSPeople",
+      "remediation": "Attach the employee master extract covering the reporting date.",
+      "note": "Satisfied by MSPeople.",
+      "needs_review": false
+    },
+    {
+      "item_id": "approval",
+      "expected": "Approval for the leave accrual.",
+      "required": true,
+      "status": "missing",
+      "location": null,
+      "remediation": "Record the approver and the approval date on the entry.",
+      "note": "No approval was found in the workbook.",
+      "needs_review": false
+    },
+    {
+      "item_id": "vacation_provision_file",
+      "expected": "Vacation provision file supporting this journal entry.",
+      "required": false,
+      "status": "missing",
+      "location": null,
+      "remediation": null,
+      "note": "No vacation provision file was found in the workbook.",
+      "needs_review": false
+    },
+    {
+      "item_id": "provider_screenshot",
+      "expected": "Provider or payroll screenshot evidencing the posted amount.",
+      "required": false,
+      "status": "available",
+      "location": "3 screenshot(s) read",
+      "remediation": null,
+      "note": "Satisfied by 3 screenshot(s) read.",
+      "needs_review": false
+    }
+  ],
+  "split_summary": {
+    "basis": {
+      "table": "calculation",
+      "sheet": "GPAY",
+      "header_row": 8,
+      "first_row": 9,
+      "last_row": 2467,
+      "rows_read": 2273,
+      "rows_total": 2459,
+      "classification_header": "FTE/Non-FTE",
+      "classification_column": "AE",
+      "classification_meaning": "fte_classification",
+      "tolerance": "0.005",
+      "formulas_available": true
+    },
+    "categories": [
+      {
+        "key": "fte",
+        "label": "FTE",
+        "row_count": 2193
+      },
+      {
+        "key": "non-fte",
+        "label": "Non-FTE",
+        "row_count": 78
+      },
+      {
+        "key": "#n/a",
+        "label": "#N/A",
+        "row_count": 2
+      }
+    ],
+    "components": [
+      {
+        "header": "Acquis CP N-1",
+        "column": "E",
+        "meaning": "cp_earned_prior",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "65185.5",
+          "non-fte": "237"
+        },
+        "total": "65422.5",
+        "rows_populated": 2087,
+        "shares": {
+          "fte": 0.9963773930987045,
+          "non-fte": 0.003622606901295426
+        }
+      },
+      {
+        "header": "Pris CP N-1",
+        "column": "F",
+        "meaning": "cp_taken_prior",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "33501.92",
+          "non-fte": "157"
+        },
+        "total": "33658.92",
+        "rows_populated": 2029,
+        "shares": {
+          "fte": 0.9953355603804281,
+          "non-fte": 0.00466443961957187
+        }
+      },
+      {
+        "header": "Solde CP N-1",
+        "column": "G",
+        "meaning": "cp_balance_prior",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "31683.58",
+          "non-fte": "80"
+        },
+        "total": "31763.58",
+        "rows_populated": 1999,
+        "shares": {
+          "fte": 0.9974813922108277,
+          "non-fte": 0.0025186077891723793
+        }
+      },
+      {
+        "header": "Provision CP N-1",
+        "column": "H",
+        "meaning": "cp_provision_prior",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "13550077.46",
+          "non-fte": "6358.19"
+        },
+        "total": "13556435.65",
+        "rows_populated": 1999,
+        "shares": {
+          "fte": 0.999530983647608,
+          "non-fte": 0.00046901635239200945
+        }
+      },
+      {
+        "header": "Acquis CP N",
+        "column": "I",
+        "meaning": "cp_earned",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "34413.22",
+          "non-fte": "819.65"
+        },
+        "total": "35232.87",
+        "rows_populated": 2234,
+        "shares": {
+          "fte": 0.9767362125197294,
+          "non-fte": 0.023263787480270554
+        }
+      },
+      {
+        "header": "Pris CP N",
+        "column": "J",
+        "meaning": "cp_taken",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "337.67",
+          "non-fte": "53"
+        },
+        "total": "390.67",
+        "rows_populated": 93,
+        "shares": {
+          "fte": 0.8643356285355926,
+          "non-fte": 0.1356643714644073
+        }
+      },
+      {
+        "header": "Solde CP N",
+        "column": "K",
+        "meaning": "cp_balance",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "34075.55",
+          "non-fte": "766.65"
+        },
+        "total": "34842.20",
+        "rows_populated": 2231,
+        "shares": {
+          "fte": 0.977996509979278,
+          "non-fte": 0.022003490020721998
+        }
+      },
+      {
+        "header": "Provision CP N",
+        "column": "L",
+        "meaning": "cp_provision_current",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "14215707.07",
+          "non-fte": "59388.52"
+        },
+        "total": "14275095.59",
+        "rows_populated": 2232,
+        "shares": {
+          "fte": 0.9958397112211562,
+          "non-fte": 0.004160288778843827
+        }
+      },
+      {
+        "header": "Total Provision CP",
+        "column": "M",
+        "meaning": "cp_provision",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "27765784.53",
+          "non-fte": "65746.71"
+        },
+        "total": "27831531.24",
+        "rows_populated": 2271,
+        "shares": {
+          "fte": 0.9976376898046663,
+          "non-fte": 0.0023623101953336866
+        }
+      },
+      {
+        "header": "Taux charges patronales",
+        "column": "N",
+        "meaning": "employer_charge_rate",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "118990.02",
+          "non-fte": "1466.61",
+          "#n/a": "44.42"
+        },
+        "total": "120501.05",
+        "rows_populated": 2254,
+        "shares": {
+          "fte": 0.9874604412160723,
+          "non-fte": 0.012170931290640206,
+          "#n/a": 0.0003686274932874029
+        }
+      },
+      {
+        "header": "Montant charges patronales",
+        "column": "O",
+        "meaning": "employer_charge_amount",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "15137978.32",
+          "non-fte": "12459.23"
+        },
+        "total": "15150437.55",
+        "rows_populated": 2232,
+        "shares": {
+          "fte": 0.9991776323318134,
+          "non-fte": 0.0008223676681865864
+        }
+      },
+      {
+        "header": "Provision Totale",
+        "column": "P",
+        "meaning": "cp_provision_with_charges",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "42903762.85",
+          "non-fte": "78205.94"
+        },
+        "total": "42981968.79",
+        "rows_populated": 2232,
+        "shares": {
+          "fte": 0.9981804942351037,
+          "non-fte": 0.0018195057648963502
+        }
+      },
+      {
+        "header": "Acquis RTT",
+        "column": "Q",
+        "meaning": "rtt_earned",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "21948.58",
+          "non-fte": "593.50"
+        },
+        "total": "22542.08",
+        "rows_populated": 2136,
+        "shares": {
+          "fte": 0.9736714624382489,
+          "non-fte": 0.02632853756175118
+        }
+      },
+      {
+        "header": "Pris RTT",
+        "column": "R",
+        "meaning": "rtt_taken",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "12292.0",
+          "non-fte": "144.5"
+        },
+        "total": "12436.5",
+        "rows_populated": 1726,
+        "shares": {
+          "fte": 0.9883809753548024,
+          "non-fte": 0.011619024645197604
+        }
+      },
+      {
+        "header": "Solde RTT",
+        "column": "S",
+        "meaning": "rtt_balance",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "9656.58",
+          "non-fte": "449.00"
+        },
+        "total": "10105.58",
+        "rows_populated": 1632,
+        "shares": {
+          "fte": 0.9555691014271324,
+          "non-fte": 0.044430898572867666
+        }
+      },
+      {
+        "header": "Provision RTT",
+        "column": "T",
+        "meaning": "rtt_provision_base",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "3901026.81",
+          "non-fte": "33280.85"
+        },
+        "total": "3934307.66",
+        "rows_populated": 1632,
+        "shares": {
+          "fte": 0.9915408623635702,
+          "non-fte": 0.008459137636429786
+        }
+      },
+      {
+        "header": "Montant Charges Patronales RTT",
+        "column": "U",
+        "meaning": "rtt_employer_charge_amount",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "2139326.98",
+          "non-fte": "6346.48"
+        },
+        "total": "2145673.46",
+        "rows_populated": 1632,
+        "shares": {
+          "fte": 0.9970421967189732,
+          "non-fte": 0.002957803281026741
+        }
+      },
+      {
+        "header": "Provision Totale RTT",
+        "column": "V",
+        "meaning": "rtt_provision",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "6040353.79",
+          "non-fte": "39627.33"
+        },
+        "total": "6079981.12",
+        "rows_populated": 1632,
+        "shares": {
+          "fte": 0.9934823268003832,
+          "non-fte": 0.006517673199616778
+        }
+      },
+      {
+        "header": "Daily Salary (RTT Rate)",
+        "column": "W",
+        "meaning": "daily_salary_rate",
+        "number_format": "#,##0.00",
+        "amounts": {
+          "fte": "727965.05759452809970",
+          "non-fte": "4977.30305317173208",
+          "#n/a": "0"
+        },
+        "total": "732942.36064769983178",
+        "rows_populated": 2273,
+        "shares": {
+          "fte": 0.9932091480580092,
+          "non-fte": 0.006790851941990771,
+          "#n/a": 0.0
+        }
+      },
+      {
+        "header": "Months to Accrue",
+        "column": "Z",
+        "meaning": "months_to_accrue",
+        "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+        "amounts": {
+          "fte": "17089",
+          "non-fte": "419",
+          "#n/a": "16"
+        },
+        "total": "17524",
+        "rows_populated": 2273,
+        "shares": {
+          "fte": 0.9751769002510843,
+          "non-fte": 0.023910066194932664,
+          "#n/a": 0.0009130335539831089
+        }
+      },
+      {
+        "header": "Earned RTT Days",
+        "column": "AA",
+        "meaning": "rtt_earned_days",
+        "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+        "amounts": {
+          "fte": "14457.79166666666712605",
+          "non-fte": "292.0875000000000014",
+          "#n/a": "0"
+        },
+        "total": "14749.87916666666712745",
+        "rows_populated": 2273,
+        "shares": {
+          "fte": 0.9801972954015725,
+          "non-fte": 0.0198027045984275,
+          "#n/a": 0.0
+        }
+      },
+      {
+        "header": "Balance RTT Days",
+        "column": "AB",
+        "meaning": "rtt_balance_days",
+        "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+        "amounts": {
+          "fte": "2235.81666666666680630",
+          "non-fte": "49.34333333333333544",
+          "#n/a": "0"
+        },
+        "total": "2285.16000000000014174",
+        "rows_populated": 2273,
+        "shares": {
+          "fte": 0.9784070553775958,
+          "non-fte": 0.021592944622404266,
+          "#n/a": 0.0
+        }
+      },
+      {
+        "header": "RTT Accrual Amount",
+        "column": "AC",
+        "meaning": "rtt_accrual",
+        "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+        "amounts": {
+          "fte": "887682.232046540207354",
+          "non-fte": "3693.859699380939812",
+          "#n/a": "0"
+        },
+        "total": "891376.091745921147166",
+        "rows_populated": 2273,
+        "shares": {
+          "fte": 0.9958560031690487,
+          "non-fte": 0.004143996830951398,
+          "#n/a": 0.0
+        }
+      },
+      {
+        "header": "FTE Vacation Accrual",
+        "column": "AF",
+        "meaning": "fte_accrual",
+        "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+        "amounts": {
+          "fte": "27839758.12",
+          "non-fte": "0",
+          "#n/a": "0"
+        },
+        "total": "27839758.12",
+        "rows_populated": 2273,
+        "shares": {
+          "fte": 1.0,
+          "non-fte": 0.0,
+          "#n/a": 0.0
+        }
+      },
+      {
+        "header": "Non-FTE Vacation Accrual",
+        "column": "AG",
+        "meaning": "non_fte_accrual",
+        "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+        "amounts": {
+          "fte": "0",
+          "non-fte": "66054.52",
+          "#n/a": "0"
+        },
+        "total": "66054.52",
+        "rows_populated": 2273,
+        "shares": {
+          "fte": 0.0,
+          "non-fte": 1.0,
+          "#n/a": 0.0
+        }
+      },
+      {
+        "header": "TOTAL ACCRUAL",
+        "column": "AH",
+        "meaning": "total_accrual",
+        "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+        "amounts": {
+          "fte": "27839758.12",
+          "non-fte": "66054.52",
+          "#n/a": "0"
+        },
+        "total": "27905812.64",
+        "rows_populated": 2273,
+        "shares": {
+          "fte": 0.9976329476280752,
+          "non-fte": 0.002367052371924762,
+          "#n/a": 0.0
+        }
+      }
+    ],
+    "tie_outs": [
+      {
+        "label": "Solde CP N-1",
+        "cell": "G6",
+        "stated": "31763.579999999998",
+        "recomputed": "31763.58",
+        "variance": "-2E-12",
+        "within_tolerance": true,
+        "stated_is_formula": false
+      },
+      {
+        "label": "Pris CP N",
+        "cell": "J6",
+        "stated": "390.66999999999996",
+        "recomputed": "390.67",
+        "variance": "-4E-14",
+        "within_tolerance": true,
+        "stated_is_formula": false
+      },
+      {
+        "label": "Solde CP N",
+        "cell": "K6",
+        "stated": "34842.199999998615",
+        "recomputed": "34842.20",
+        "variance": "-1.385E-9",
+        "within_tolerance": true,
+        "stated_is_formula": false
+      },
+      {
+        "label": "Total Provision CP",
+        "cell": "M6",
+        "stated": "27831531.23999996",
+        "recomputed": "27831531.24",
+        "variance": "-4E-8",
+        "within_tolerance": true,
+        "stated_is_formula": false
+      },
+      {
+        "label": "Acquis RTT",
+        "cell": "Q6",
+        "stated": "22542.08",
+        "recomputed": "22542.08",
+        "variance": "0.00",
+        "within_tolerance": true,
+        "stated_is_formula": false
+      },
+      {
+        "label": "Pris RTT",
+        "cell": "R6",
+        "stated": "12436.5",
+        "recomputed": "12436.5",
+        "variance": "0.0",
+        "within_tolerance": true,
+        "stated_is_formula": false
+      },
+      {
+        "label": "Solde RTT",
+        "cell": "S6",
+        "stated": "10105.580000000002",
+        "recomputed": "10105.58",
+        "variance": "2E-12",
+        "within_tolerance": true,
+        "stated_is_formula": false
+      },
+      {
+        "label": "Provision RTT",
+        "cell": "T6",
+        "stated": "3934307.6600000057",
+        "recomputed": "3934307.66",
+        "variance": "5.7E-9",
+        "within_tolerance": true,
+        "stated_is_formula": false
+      },
+      {
+        "label": "Daily Salary (RTT Rate)",
+        "cell": "W6",
+        "stated": "566666.6666666667",
+        "recomputed": "732942.36064769983178",
+        "variance": "-166275.69398103313178",
+        "within_tolerance": false,
+        "stated_is_formula": true
+      },
+      {
+        "label": "Balance RTT Days",
+        "cell": "AB6",
+        "stated": "2285.1600000000135",
+        "recomputed": "2285.16000000000014174",
+        "variance": "1.335826E-11",
+        "within_tolerance": true,
+        "stated_is_formula": false
+      },
+      {
+        "label": "FTE Vacation Accrual",
+        "cell": "AF6",
+        "stated": "27839758.11999996",
+        "recomputed": "27839758.12",
+        "variance": "-4E-8",
+        "within_tolerance": true,
+        "stated_is_formula": false
+      },
+      {
+        "label": "Non-FTE Vacation Accrual",
+        "cell": "AG6",
+        "stated": "66054.51999999999",
+        "recomputed": "66054.52",
+        "variance": "-1E-11",
+        "within_tolerance": true,
+        "stated_is_formula": false
+      },
+      {
+        "label": "TOTAL ACCRUAL",
+        "cell": "AH6",
+        "stated": "27905812.639999952",
+        "recomputed": "27905812.64",
+        "variance": "-4.8E-8",
+        "within_tolerance": true,
+        "stated_is_formula": false
+      }
+    ],
+    "rules": [],
+    "walkthroughs": [
+      {
+        "row": 9,
+        "why": "The first row of the working, where the rules above were read from",
+        "category": "FTE",
+        "context": [
+          [
+            "Salary Currency",
+            "EUR"
+          ],
+          [
+            "Staffing Type",
+            "Regular/Expat/Comm Eligible"
+          ]
+        ],
+        "steps": [
+          {
+            "header": "Acquis CP N-1",
+            "column": "E",
+            "cell": "E9",
+            "value": "34",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Pris CP N-1",
+            "column": "F",
+            "cell": "F9",
+            "value": "12",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Solde CP N-1",
+            "column": "G",
+            "cell": "G9",
+            "value": "22",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision CP N-1",
+            "column": "H",
+            "cell": "H9",
+            "value": "7014.92",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Acquis CP N",
+            "column": "I",
+            "cell": "I9",
+            "value": "16.66",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Pris CP N",
+            "column": "J",
+            "cell": "J9",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Solde CP N",
+            "column": "K",
+            "cell": "K9",
+            "value": "16.66",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision CP N",
+            "column": "L",
+            "cell": "L9",
+            "value": "5394.37",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Total Provision CP",
+            "column": "M",
+            "cell": "M9",
+            "value": "12409.29",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Taux charges patronales",
+            "column": "N",
+            "cell": "N9",
+            "value": "55.43",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Montant charges patronales",
+            "column": "O",
+            "cell": "O9",
+            "value": "6878.47",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision Totale",
+            "column": "P",
+            "cell": "P9",
+            "value": "19287.76",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Acquis RTT",
+            "column": "Q",
+            "cell": "Q9",
+            "value": "10",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Pris RTT",
+            "column": "R",
+            "cell": "R9",
+            "value": "1",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Solde RTT",
+            "column": "S",
+            "cell": "S9",
+            "value": "9",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision RTT",
+            "column": "T",
+            "cell": "T9",
+            "value": "2805.56",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Montant Charges Patronales RTT",
+            "column": "U",
+            "cell": "U9",
+            "value": "1555.12",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision Totale RTT",
+            "column": "V",
+            "cell": "V9",
+            "value": "4360.68",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Daily Salary (RTT Rate)",
+            "column": "W",
+            "cell": "W9",
+            "value": "100000",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Months to Accrue",
+            "column": "Z",
+            "cell": "Z9",
+            "value": "8",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Earned RTT Days",
+            "column": "AA",
+            "cell": "AA9",
+            "value": "6.67",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Balance RTT Days",
+            "column": "AB",
+            "cell": "AB9",
+            "value": "5.666666666666667",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "RTT Accrual Amount",
+            "column": "AC",
+            "cell": "AC9",
+            "value": "1766.4637037037",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "FTE Vacation Accrual",
+            "column": "AF",
+            "cell": "AF9",
+            "value": "12556.5",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Non-FTE Vacation Accrual",
+            "column": "AG",
+            "cell": "AG9",
+            "value": "0",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "TOTAL ACCRUAL",
+            "column": "AH",
+            "cell": "AH9",
+            "value": "12556.5",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          }
+        ]
+      },
+      {
+        "row": 2082,
+        "why": "An exception found by leave_balance_recalculates",
+        "category": "FTE",
+        "context": [
+          [
+            "Salary Currency",
+            "EUR"
+          ],
+          [
+            "Staffing Type",
+            "Regular/Expat/Comm Eligible"
+          ]
+        ],
+        "steps": [
+          {
+            "header": "Acquis CP N-1",
+            "column": "E",
+            "cell": "E2082",
+            "value": "24",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Pris CP N-1",
+            "column": "F",
+            "cell": "F2082",
+            "value": "22.83",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Solde CP N-1",
+            "column": "G",
+            "cell": "G2082",
+            "value": "1.17",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision CP N-1",
+            "column": "H",
+            "cell": "H2082",
+            "value": "301.79",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Acquis CP N",
+            "column": "I",
+            "cell": "I2082",
+            "value": "8.33",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Pris CP N",
+            "column": "J",
+            "cell": "J2082",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Solde CP N",
+            "column": "K",
+            "cell": "K2082",
+            "value": "8.33",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision CP N",
+            "column": "L",
+            "cell": "L2082",
+            "value": "2203.17",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Total Provision CP",
+            "column": "M",
+            "cell": "M2082",
+            "value": "2504.96",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Taux charges patronales",
+            "column": "N",
+            "cell": "N2082",
+            "value": "53.71",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Montant charges patronales",
+            "column": "O",
+            "cell": "O2082",
+            "value": "1345.41",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision Totale",
+            "column": "P",
+            "cell": "P2082",
+            "value": "3850.37",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Acquis RTT",
+            "column": "Q",
+            "cell": "Q2082",
+            "value": "8",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Pris RTT",
+            "column": "R",
+            "cell": "R2082",
+            "value": "11.5",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Solde RTT",
+            "column": "S",
+            "cell": "S2082",
+            "value": "-3.5",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision RTT",
+            "column": "T",
+            "cell": "T2082",
+            "value": "-873.52",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Montant Charges Patronales RTT",
+            "column": "U",
+            "cell": "U2082",
+            "value": "-469.17",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision Totale RTT",
+            "column": "V",
+            "cell": "V2082",
+            "value": "-1342.69",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Daily Salary (RTT Rate)",
+            "column": "W",
+            "cell": "W2082",
+            "value": "249.57714285714286",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Months to Accrue",
+            "column": "Z",
+            "cell": "Z2082",
+            "value": "8",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Earned RTT Days",
+            "column": "AA",
+            "cell": "AA2082",
+            "value": "5.333333333333333",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Balance RTT Days",
+            "column": "AB",
+            "cell": "AB2082",
+            "value": "0",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "RTT Accrual Amount",
+            "column": "AC",
+            "cell": "AC2082",
+            "value": "0",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "FTE Vacation Accrual",
+            "column": "AF",
+            "cell": "AF2082",
+            "value": "2504.96",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Non-FTE Vacation Accrual",
+            "column": "AG",
+            "cell": "AG2082",
+            "value": "0",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "TOTAL ACCRUAL",
+            "column": "AH",
+            "cell": "AH2082",
+            "value": "2504.96",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          }
+        ]
+      },
+      {
+        "row": 230,
+        "why": "An exception found by negative_accruals_explained",
+        "category": "FTE",
+        "context": [
+          [
+            "Salary Currency",
+            "EUR"
+          ],
+          [
+            "Staffing Type",
+            "Regular/Expat/Comm Eligible"
+          ]
+        ],
+        "steps": [
+          {
+            "header": "Acquis CP N-1",
+            "column": "E",
+            "cell": "E230",
+            "value": "29",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Pris CP N-1",
+            "column": "F",
+            "cell": "F230",
+            "value": "29",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Solde CP N-1",
+            "column": "G",
+            "cell": "G230",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision CP N-1",
+            "column": "H",
+            "cell": "H230",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Acquis CP N",
+            "column": "I",
+            "cell": "I230",
+            "value": "16.67",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Pris CP N",
+            "column": "J",
+            "cell": "J230",
+            "value": "20",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Solde CP N",
+            "column": "K",
+            "cell": "K230",
+            "value": "-3.33",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision CP N",
+            "column": "L",
+            "cell": "L230",
+            "value": "-1251.88",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Total Provision CP",
+            "column": "M",
+            "cell": "M230",
+            "value": "-1251.88",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Taux charges patronales",
+            "column": "N",
+            "cell": "N230",
+            "value": "55.41",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Montant charges patronales",
+            "column": "O",
+            "cell": "O230",
+            "value": "-693.67",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision Totale",
+            "column": "P",
+            "cell": "P230",
+            "value": "-1945.55",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Acquis RTT",
+            "column": "Q",
+            "cell": "Q230",
+            "value": "10",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Pris RTT",
+            "column": "R",
+            "cell": "R230",
+            "value": "1",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Solde RTT",
+            "column": "S",
+            "cell": "S230",
+            "value": "9",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision RTT",
+            "column": "T",
+            "cell": "T230",
+            "value": "3383.48",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Montant Charges Patronales RTT",
+            "column": "U",
+            "cell": "U230",
+            "value": "1874.79",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision Totale RTT",
+            "column": "V",
+            "cell": "V230",
+            "value": "5258.27",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Daily Salary (RTT Rate)",
+            "column": "W",
+            "cell": "W230",
+            "value": "375.9422222222222",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Months to Accrue",
+            "column": "Z",
+            "cell": "Z230",
+            "value": "8",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Earned RTT Days",
+            "column": "AA",
+            "cell": "AA230",
+            "value": "6.666666666666667",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Balance RTT Days",
+            "column": "AB",
+            "cell": "AB230",
+            "value": "5.666666666666667",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "RTT Accrual Amount",
+            "column": "AC",
+            "cell": "AC230",
+            "value": "2130.339259259259",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "FTE Vacation Accrual",
+            "column": "AF",
+            "cell": "AF230",
+            "value": "-1074.35",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Non-FTE Vacation Accrual",
+            "column": "AG",
+            "cell": "AG230",
+            "value": "0",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "TOTAL ACCRUAL",
+            "column": "AH",
+            "cell": "AH230",
+            "value": "-1074.35",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          }
+        ]
+      },
+      {
+        "row": 1650,
+        "why": "An exception found by entry_total_recalculates",
+        "category": "#N/A",
+        "context": [
+          [
+            "Salary Currency",
+            "EUR"
+          ],
+          [
+            "Staffing Type",
+            "#N/A"
+          ]
+        ],
+        "steps": [
+          {
+            "header": "Acquis CP N-1",
+            "column": "E",
+            "cell": "E1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Pris CP N-1",
+            "column": "F",
+            "cell": "F1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Solde CP N-1",
+            "column": "G",
+            "cell": "G1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision CP N-1",
+            "column": "H",
+            "cell": "H1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Acquis CP N",
+            "column": "I",
+            "cell": "I1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Pris CP N",
+            "column": "J",
+            "cell": "J1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Solde CP N",
+            "column": "K",
+            "cell": "K1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision CP N",
+            "column": "L",
+            "cell": "L1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Total Provision CP",
+            "column": "M",
+            "cell": "M1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Taux charges patronales",
+            "column": "N",
+            "cell": "N1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Montant charges patronales",
+            "column": "O",
+            "cell": "O1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision Totale",
+            "column": "P",
+            "cell": "P1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Acquis RTT",
+            "column": "Q",
+            "cell": "Q1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Pris RTT",
+            "column": "R",
+            "cell": "R1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Solde RTT",
+            "column": "S",
+            "cell": "S1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision RTT",
+            "column": "T",
+            "cell": "T1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Montant Charges Patronales RTT",
+            "column": "U",
+            "cell": "U1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Provision Totale RTT",
+            "column": "V",
+            "cell": "V1650",
+            "value": null,
+            "number_format": "General",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Daily Salary (RTT Rate)",
+            "column": "W",
+            "cell": "W1650",
+            "value": "0",
+            "number_format": "#,##0.00",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Months to Accrue",
+            "column": "Z",
+            "cell": "Z1650",
+            "value": "8",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Earned RTT Days",
+            "column": "AA",
+            "cell": "AA1650",
+            "value": "0",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Balance RTT Days",
+            "column": "AB",
+            "cell": "AB1650",
+            "value": "0",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "RTT Accrual Amount",
+            "column": "AC",
+            "cell": "AC1650",
+            "value": "0",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "FTE Vacation Accrual",
+            "column": "AF",
+            "cell": "AF1650",
+            "value": "0",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "Non-FTE Vacation Accrual",
+            "column": "AG",
+            "cell": "AG1650",
+            "value": "0",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          },
+          {
+            "header": "TOTAL ACCRUAL",
+            "column": "AH",
+            "cell": "AH1650",
+            "value": "0",
+            "number_format": "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)",
+            "formula": null,
+            "in_headers": null
+          }
+        ]
+      }
+    ],
+    "tests": [
+      {
+        "check_id": "evidence_baseline",
+        "question": "Are the required evidence items present?",
+        "area": "evidence_completeness",
+        "tool": "evidence_register",
+        "rows_total": 4,
+        "rows_checked": 4,
+        "flagged": 2,
+        "severity": "high",
+        "status": "missing_evidence",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "4 of 6 expected evidence layers are present in the workbook; missing: approval, vacation_provision_file"
+      },
+      {
+        "check_id": "population_complete",
+        "question": "Is every employee in the working present in the employee master, with no duplicates, no unexpected additions and nobody inactive at the reporting date?\n",
+        "area": "calculation_accuracy",
+        "tool": "population_reconcile",
+        "rows_total": 0,
+        "rows_checked": 0,
+        "flagged": 0,
+        "severity": "high",
+        "status": "unable_to_validate",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "2,273 employee rows carry only 1 distinct reference(s), so the column is redacted or constant and the population cannot be reconciled against the master"
+      },
+      {
+        "check_id": "classification_matches_master",
+        "question": "Does each employee's amount sit on the side their FTE or non-FTE classification says it should?\n",
+        "area": "calculation_accuracy",
+        "tool": "classification_check",
+        "rows_total": 2459,
+        "rows_checked": 2232,
+        "flagged": 0,
+        "severity": "high",
+        "status": "partial",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "2,232 classified row(s) checked; 0 carry an amount on the wrong side"
+      },
+      {
+        "check_id": "salary_agrees_with_source",
+        "question": "Does the salary used agree with the source, and is it effective at the date?",
+        "area": "calculation_accuracy",
+        "tool": "salary_validate",
+        "rows_total": 2273,
+        "rows_checked": 731,
+        "flagged": 0,
+        "severity": "high",
+        "status": "missing_evidence",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "731 of 731 employees with an RTT amount carry a usable daily rate. The workbook carries no independent salary source, so the rate itself is not checked against one"
+      },
+      {
+        "check_id": "salary_per_day_follows_methodology",
+        "question": "Does the leave balance times the daily rate give the accrual the workbook states, employee by employee?\n",
+        "area": "calculation_accuracy",
+        "tool": "reperform",
+        "rows_total": 2273,
+        "rows_checked": 2273,
+        "flagged": 1,
+        "severity": "high",
+        "status": "fail",
+        "financial_impact": "564900.202962963000000",
+        "first_example": "AC9",
+        "conclusion": "Balance in days times the daily rate: 2,272 of 2,273 rows agree, 1 differ by 564900.202962963000000 in total"
+      },
+      {
+        "check_id": "leave_balance_recalculates",
+        "question": "Does opening + earned - taken +/- adjustments equal the closing balance?",
+        "area": "calculation_accuracy",
+        "tool": "reperform",
+        "rows_total": 2273,
+        "rows_checked": 90,
+        "flagged": 1096,
+        "severity": "high",
+        "status": "unable_to_validate",
+        "financial_impact": "42.03",
+        "first_example": "S2082",
+        "conclusion": "CP earned minus taken against the stated balance: only 89 of 90 records agree, so this workbook derives the figure some other way and it cannot be re-performed from the columns present"
+      },
+      {
+        "check_id": "rtt_balance_rebuilds",
+        "question": "Does the RTT balance used for valuation reproduce from the days earned to date and the days taken, employee by employee?\n",
+        "area": "calculation_accuracy",
+        "tool": "rtt_balance_reperforms",
+        "rows_total": 2273,
+        "rows_checked": 2273,
+        "flagged": 0,
+        "severity": "high",
+        "status": "pass",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "RTT balance days: 2,273 of 2,273 rows agree"
+      },
+      {
+        "check_id": "entry_total_recalculates",
+        "question": "Can the amount that was posted be regenerated from the approved formula, record by record, and does the total agree with what was booked, within tolerance?\n",
+        "area": "calculation_accuracy",
+        "tool": "recalc_entry_total",
+        "rows_total": 2273,
+        "rows_checked": 2271,
+        "flagged": 18,
+        "severity": "high",
+        "status": "fail",
+        "financial_impact": "47075.00",
+        "first_example": "GPAY!AH9",
+        "conclusion": "Rebuilt from 2,271 of 2,273 records, the entry comes to 27,952,887.64 against 27,905,812.64 booked: 47,075.00 more than was posted, inside the tolerance of 279,058.13 (1% of the booked amount). 2 record(s) could not be rebuilt at all, so the agreement is partial rather than complete."
+      },
+      {
+        "check_id": "accrual_reperforms",
+        "question": "Does an independent recalculation of eligible leave times salary per day agree with the working, row by row?\n",
+        "area": "calculation_accuracy",
+        "tool": "reperform",
+        "rows_total": 2273,
+        "rows_checked": 2273,
+        "flagged": 0,
+        "severity": "high",
+        "status": "pass",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "FTE plus non-FTE against the stated total: 2,273 of 2,273 rows agree"
+      },
+      {
+        "check_id": "negative_accruals_explained",
+        "question": "Are any negative employee-level accruals expected rather than bad data?",
+        "area": "calculation_accuracy",
+        "tool": "negative_scan",
+        "rows_total": 0,
+        "rows_checked": 0,
+        "flagged": 1,
+        "severity": "high",
+        "status": "fail",
+        "financial_impact": "1074.35",
+        "first_example": "AH230",
+        "conclusion": "1 employee row(s) carry a negative total_accrual, 1074.35 in total"
+      },
+      {
+        "check_id": "accrual_composition_reperforms",
+        "question": "Does the stated total equal the CP provision plus a twelfth of the RTT accrual, employee by employee?\n",
+        "area": "calculation_accuracy",
+        "tool": "reperform",
+        "rows_total": 2273,
+        "rows_checked": 2271,
+        "flagged": 2,
+        "severity": "high",
+        "status": "fail",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "CP provision plus a twelfth of the RTT accrual against the stated total: 2,271 of 2,273 rows agree, 2 row(s) had no comparable figure"
+      },
+      {
+        "check_id": "cp_provision_rebuilds",
+        "question": "Does the stated CP provision equal the prior plus the current period's provision, employee by employee?\n",
+        "area": "calculation_accuracy",
+        "tool": "reperform",
+        "rows_total": 2273,
+        "rows_checked": 2271,
+        "flagged": 2,
+        "severity": "high",
+        "status": "fail",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "Prior plus current period CP provision against the stated total: 2,271 of 2,273 rows agree, 2 row(s) had no comparable figure"
+      },
+      {
+        "check_id": "cp_charges_tie_to_the_rate",
+        "question": "Do the employer charges on each employee's CP provision equal that provision at the rate the workbook states for them?\n",
+        "area": "calculation_accuracy",
+        "tool": "reperform",
+        "rows_total": 2273,
+        "rows_checked": 2273,
+        "flagged": 0,
+        "severity": "high",
+        "status": "pass",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "Employer charges on the CP provision at the stated rate: 2,273 of 2,273 rows agree"
+      },
+      {
+        "check_id": "cp_provision_total_includes_its_charges",
+        "question": "Does the stated total CP provision equal the provision plus its employer charges, employee by employee?\n",
+        "area": "calculation_accuracy",
+        "tool": "reperform",
+        "rows_total": 2273,
+        "rows_checked": 2273,
+        "flagged": 0,
+        "severity": "high",
+        "status": "pass",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "CP provision plus its employer charges against the stated total: 2,273 of 2,273 rows agree"
+      },
+      {
+        "check_id": "rtt_provision_values_the_balance",
+        "question": "Does the RTT provision the workbook states in money equal the RTT balance in days at the employee's daily rate?\n",
+        "area": "calculation_accuracy",
+        "tool": "reperform",
+        "rows_total": 2273,
+        "rows_checked": 2273,
+        "flagged": 1,
+        "severity": "high",
+        "status": "fail",
+        "financial_impact": "897194.44",
+        "first_example": "T9",
+        "conclusion": "RTT balance in days times the daily rate: 2,272 of 2,273 rows agree, 1 differ by 897194.44 in total"
+      },
+      {
+        "check_id": "rtt_charges_tie_to_the_rate",
+        "question": "Do the employer charges on each employee's RTT provision equal that provision at the rate the workbook states for them?\n",
+        "area": "calculation_accuracy",
+        "tool": "reperform",
+        "rows_total": 2273,
+        "rows_checked": 2273,
+        "flagged": 0,
+        "severity": "high",
+        "status": "pass",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "Employer charges on the RTT provision at the stated rate: 2,273 of 2,273 rows agree"
+      },
+      {
+        "check_id": "rtt_provision_total_includes_its_charges",
+        "question": "Does the stated total RTT provision equal the provision plus its employer charges, employee by employee?\n",
+        "area": "calculation_accuracy",
+        "tool": "reperform",
+        "rows_total": 2273,
+        "rows_checked": 2273,
+        "flagged": 0,
+        "severity": "high",
+        "status": "pass",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "RTT provision plus its employer charges against the stated total: 2,273 of 2,273 rows agree"
+      },
+      {
+        "check_id": "prior_period_cp_balance_ties",
+        "question": "Does the prior period's CP balance equal that period's earned days less the days taken, employee by employee?\n",
+        "area": "calculation_accuracy",
+        "tool": "reperform",
+        "rows_total": 2273,
+        "rows_checked": 2273,
+        "flagged": 0,
+        "severity": "high",
+        "status": "pass",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "Prior period CP earned minus taken against the stated balance: 2,273 of 2,273 rows agree"
+      },
+      {
+        "check_id": "fte_split_aggregates",
+        "question": "Does FTE accrual plus non-FTE accrual equal the stated total, per employee?",
+        "area": "calculation_accuracy",
+        "tool": "reperform",
+        "rows_total": 2273,
+        "rows_checked": 2273,
+        "flagged": 0,
+        "severity": "high",
+        "status": "pass",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "FTE plus non-FTE against the stated total: 2,273 of 2,273 rows agree"
+      },
+      {
+        "check_id": "working_ties_to_posting",
+        "question": "Does the employee-level calculation tie to the posted entry, by company code?",
+        "area": "calculation_accuracy",
+        "tool": "rollup_chain",
+        "rows_total": 0,
+        "rows_checked": 0,
+        "flagged": 0,
+        "severity": "high",
+        "status": "pass",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "calculation -> je_posting: 4 group(s) compared, 0 differ"
+      },
+      {
+        "check_id": "accounts_mapped_correctly",
+        "question": "Are FTE, non-FTE and liability amounts posted to the accounts the master states?",
+        "area": "calculation_accuracy",
+        "tool": "account_mapping",
+        "rows_total": 0,
+        "rows_checked": 0,
+        "flagged": 0,
+        "severity": "high",
+        "status": "pass",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "3 account(s) used against 3 the master allows"
+      },
+      {
+        "check_id": "entry_balances",
+        "question": "Do total debits equal total credits, overall and per company code and currency?",
+        "area": "calculation_accuracy",
+        "tool": "balance",
+        "rows_total": 0,
+        "rows_checked": 0,
+        "flagged": 0,
+        "severity": "high",
+        "status": "pass",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "Debits and credits net to 1.30066E-8 across 428 lines in 4 groups"
+      },
+      {
+        "check_id": "stated_totals_agree",
+        "question": "Do the hash total and JE total stated on the entry equal the sum of the lines?",
+        "area": "calculation_accuracy",
+        "tool": "control_totals",
+        "rows_total": 0,
+        "rows_checked": 0,
+        "flagged": 0,
+        "severity": "high",
+        "status": "pass",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "hash_total states 27905812.639999997; the lines give 1.30066E-8 net, 55811625.2799999840066 gross, 27905812.6399999985066 on the debit side, agrees on the debit side"
+      },
+      {
+        "check_id": "posting_period_agrees",
+        "question": "Do the fiscal period on the entry, in the header and on the lines all agree?",
+        "area": "period",
+        "tool": "period_agreement",
+        "rows_total": 0,
+        "rows_checked": 0,
+        "flagged": 0,
+        "severity": "medium",
+        "status": "pass",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "1 distinct fiscal period(s) on the entry: 07; 1 fiscal year(s)"
+      },
+      {
+        "check_id": "reversal_is_configured",
+        "question": "Is the reversal date later than the posting date, using the same accounts with opposite signs, and not duplicated into another period?\n",
+        "area": "period",
+        "tool": "reversal_check",
+        "rows_total": 0,
+        "rows_checked": 0,
+        "flagged": 0,
+        "severity": "medium",
+        "status": "partial",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "428 line(s) carry a posting date; 0 have no reversal date and 0 reverse on or before posting"
+      },
+      {
+        "check_id": "methodology_unchanged",
+        "question": "Does the methodology tab state the same period the entry posts in?",
+        "area": "observation",
+        "tool": "methodology_drift",
+        "rows_total": 0,
+        "rows_checked": 0,
+        "flagged": 0,
+        "severity": "info",
+        "status": "unable_to_validate",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "The methodology tab states no period stamp, so it cannot be matched to the entry (posted in period 07). Not read from the tab, so not confirmed: salary_per_day_denominator, balance_floored_at_zero, salary per day denominator, whether a negative balance is floored at zero"
+      },
+      {
+        "check_id": "manual_updates_supported",
+        "question": "Are numbers typed over formulas explained?",
+        "area": "observation",
+        "tool": "formula_health",
+        "rows_total": 0,
+        "rows_checked": 0,
+        "flagged": 87,
+        "severity": "info",
+        "status": "fail",
+        "financial_impact": null,
+        "first_example": "JE Create!E316",
+        "conclusion": "value_error: 78; na_error: 9"
+      },
+      {
+        "check_id": "personal_data_located",
+        "question": "Where does personal data appear, and is it expected on that tab?",
+        "area": "pii",
+        "tool": "pii_scan",
+        "rows_total": 0,
+        "rows_checked": 0,
+        "flagged": 0,
+        "severity": "medium",
+        "status": "pass",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "No personal data on the tabs where it does not belong"
+      },
+      {
+        "check_id": "evidence_matches_je_type",
+        "question": "Does the supporting evidence - the calculation sheet, the employee master, any pasted screenshot - relate to the same entity and transaction as the entry actually posted?\n",
+        "area": "evidence_appropriateness",
+        "tool": "evidence_appropriateness",
+        "rows_total": 0,
+        "rows_checked": 0,
+        "flagged": 0,
+        "severity": "medium",
+        "status": "pass",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "Could not be computed: evidence appropriateness is not currently checked"
+      },
+      {
+        "check_id": "trend_within_tolerance",
+        "question": "Does the posted amount fall within the agreed deviation of the trailing three-month average for this entry type?\n",
+        "area": "trend",
+        "tool": "trend_check",
+        "rows_total": 0,
+        "rows_checked": 0,
+        "flagged": 0,
+        "severity": "medium",
+        "status": "unable_to_validate",
+        "financial_impact": null,
+        "first_example": null,
+        "conclusion": "No prior review of this entry type fell inside the 3-month lookback, so there is nothing yet to compare the posted amount against"
+      }
+    ],
+    "notes": [
+      "No column of this working calculates itself in the rows scanned: every amount is a typed value. Nothing can be re-performed from the file's own formulas, and the arithmetic below was re-added from the values as they stand.",
+      "186 of the 2,459 rows in the block carry no value in 'FTE/Non-FTE' and were not summed. A block ends at a run of blank rows, so it reaches past the last record into the preparer's own subtotal and spacer rows."
+    ]
+  },
+  "recalculation": {
+    "basis": {
+      "table": "calculation",
+      "sheet": "GPAY",
+      "header_row": 8,
+      "first_row": 9,
+      "last_row": 2467,
+      "record_key": "employee_ref",
+      "stated_column": "AH",
+      "stated_header": "TOTAL ACCRUAL",
+      "formula": "cp_provision + rtt_amount / 12",
+      "formula_expanded": "Total Provision\nCP + ((if(coalesce(Pris\nRTT, 0) == 0, 0, max((coalesce(Acquis\nRTT, 0) / 12 * Months to Accrue) - Pris\nRTT, 0))) * Daily Salary (RTT Rate)) / 12",
+      "formula_in_headers": "Total Provision\nCP + Rebuilt RTT accrual / 12",
+      "sign": "a positive amount is a debit to the expense accounts",
+      "currency": "EUR",
+      "rounding": "2 decimal places, half up",
+      "day_count": "the approved denominator stated in the methodology, never an assumed 30",
+      "tolerance_pct": "1",
+      "tolerance_amount": "279058.13",
+      "row_tolerance": "0.01",
+      "worked_example": "One record of the working: a yearly RTT entitlement of 10 days, prorated over 8 months worked, gives 6.67 days earned; one day has been taken, leaving 5.67; valued at the employee's daily rate of EUR 311.73 that is an RTT accrual of 1,766.46, a twelfth of which is 147.21; added to the CP provision of 12,409.29 that gives 12,556.50, which is the amount the workbook states as that employee's total. The same record's FTE and non-FTE accruals, 12,556.50 and 0.00, also add to 12,556.50 - re-performed and compared separately below, since they corroborate the figure rather than build it. Every record's total added together gives the entry.\n",
+      "explained": {
+        "intro": "Here is the calculation in plain language, using employee 1073 as the example.\n",
+        "context": "What we are calculating: how much the company owes an employee for paid leave they have earned but not yet taken. There are two kinds of leave. Regular paid holidays (CP), and RTT days, which are extra days off for working beyond 35 hours a week.\n",
+        "steps": [
+          {
+            "label": "How many RTT days has the employee earned so far this year?",
+            "detail": "An employee earns their yearly RTT days gradually, month by month. We take the full year's allowance, divide it by 12 to get one month's worth, and multiply by the number of months worked so far.\n",
+            "example": "10 days a year / 12 x 8 months = 6.67 days earned so far"
+          },
+          {
+            "label": "Has the employee used any of those days?",
+            "detail": "If no RTT days have been taken at all, the RTT part of the accrual is nil and the calculation goes straight to the paid-holiday amount. Otherwise it carries on.\n",
+            "example": "Employee 1073 has taken 1 day, so the calculation continues."
+          },
+          {
+            "label": "How many of those days are still unused?",
+            "detail": "Subtract the RTT days the employee has already taken. If they have taken more than they have earned, count it as zero, never negative.\n",
+            "example": "6.67 earned - 1 taken = 5.67 days left"
+          },
+          {
+            "label": "What are the unused days worth?",
+            "detail": "Multiply the days left by the employee's daily salary.",
+            "example": "5.67 days x EUR 311.73 = EUR 1,766.46"
+          },
+          {
+            "label": "Take one month's share.",
+            "detail": "Divide that amount by 12 to get the portion that belongs to the current month.\n",
+            "example": "EUR 1,766.46 / 12 = EUR 147.21"
+          },
+          {
+            "label": "Add the paid-holiday (CP) amount.",
+            "detail": "Add the amount already set aside for the employee's unused regular paid holidays, from last year and this year combined.\n",
+            "example": "EUR 147.21 + EUR 12,409.29 = EUR 12,556.50"
+          },
+          {
+            "label": "Check the employee type.",
+            "detail": "The calculation only applies to employees classified as FTE or Non-FTE. For anyone else the result is zero.\n",
+            "example": "Employee 1073 is FTE, so the result stands."
+          }
+        ],
+        "summary": "In one sentence: the total accrual is one month's share of the value of unused RTT days, plus the full value of unused paid holidays, for FTE and Non-FTE employees only.\n",
+        "caveats": [
+          "The amount excludes employer social charges.",
+          "Only the RTT portion is divided by twelve; the paid-holiday amount is counted in full.",
+          "Both legs are floored at zero, so a balance that has been overspent never turns an employee's accrual negative.",
+          "Step 2 sets the RTT part to zero whenever an employee has taken no RTT days at all. On both sample workbooks the file's own balance column is nil on every one of those records, so this reproduces the preparer's own convention rather than imposing one. Confirm it with whoever owns the formula before relying on this explanation.",
+          "Step 7 describes the population this entry is meant to cover, and no check currently enforces it: nothing yet verifies that an employee outside the FTE and Non-FTE classes carries a zero."
+        ]
+      },
+      "provisional_basis": true
+    },
+    "status": "partial",
+    "explanation": "Rebuilt from 2,271 of 2,273 records, the entry comes to 27,952,887.64 against 27,905,812.64 booked: 47,075.00 more than was posted, inside the tolerance of 279,058.13 (1% of the booked amount). 2 record(s) could not be rebuilt at all, so the agreement is partial rather than complete.",
+    "recomputed_total": "27952887.64",
+    "booked": {
+      "method": "posting_debits",
+      "total": "27905812.64",
+      "description": "the debit side of the posted entry, summed from 422 of its own lines",
+      "table": "je_posting",
+      "sheet": "Batch JE",
+      "lines": 422,
+      "accounts": [
+        "720008",
+        "720023"
+      ]
+    },
+    "difference": "47075.00",
+    "difference_pct": 0.16869245345868558,
+    "within_tolerance": true,
+    "rows_total": 2273,
+    "rows_recomputed": 2271,
+    "rows_incomplete": 2,
+    "rows_agreeing": 2270,
+    "row_impact": "47075.01",
+    "inputs": [
+      {
+        "id": "cp_provision",
+        "meaning": "cp_provision",
+        "unit": "currency",
+        "source": "calculation",
+        "description": "The CP provision as the payroll extract states it for the employee: last year's provision plus this year's. Rebuilt from those two legs in its own right by `cp_provision_rebuilds`.\n",
+        "required": true,
+        "bound": true,
+        "column": "M",
+        "header": "Total Provision\nCP",
+        "rows_present": 2271,
+        "rows_missing": 2
+      },
+      {
+        "id": "rtt_entitlement_days",
+        "meaning": "rtt_earned",
+        "unit": "days",
+        "source": "calculation",
+        "description": "The employee's RTT entitlement for the full year, before proration. Blank for an employee with no RTT entitlement in the period - 137 and 132 records on the two real workbooks, all of them ordinary employees with real CP activity - so it is folded to zero rather than read as a gap.\n",
+        "required": false,
+        "bound": true,
+        "column": "Q",
+        "header": "Acquis\nRTT",
+        "rows_present": 2136,
+        "rows_missing": 137
+      },
+      {
+        "id": "months_to_accrue",
+        "meaning": "months_to_accrue",
+        "unit": "months",
+        "source": "calculation",
+        "description": "Months of the vacation year worked at the reporting date.",
+        "required": true,
+        "bound": true,
+        "column": "Z",
+        "header": "Months to Accrue",
+        "rows_present": 2273,
+        "rows_missing": 0
+      },
+      {
+        "id": "rtt_days_taken",
+        "meaning": "rtt_taken",
+        "unit": "days",
+        "source": "calculation",
+        "description": "RTT days already taken. Blank on about a quarter of the records, and there it means none have been taken rather than that the figure is unknown.\n",
+        "required": false,
+        "bound": true,
+        "column": "R",
+        "header": "Pris\nRTT",
+        "rows_present": 1726,
+        "rows_missing": 547
+      },
+      {
+        "id": "daily_rate",
+        "meaning": "daily_salary_rate",
+        "unit": "currency_per_day",
+        "source": "calculation",
+        "description": "The daily salary rate the RTT days are valued at.",
+        "required": true,
+        "bound": true,
+        "column": "W",
+        "header": "Daily Salary (RTT Rate)",
+        "rows_present": 2273,
+        "rows_missing": 0
+      },
+      {
+        "id": "fte_amount",
+        "meaning": "fte_accrual",
+        "unit": "currency",
+        "source": "calculation",
+        "description": "The employee's FTE share of the accrual. Carried for the corroborating split below, not for the main formula.\n",
+        "required": false,
+        "bound": true,
+        "column": "AF",
+        "header": "FTE Vacation Accrual",
+        "rows_present": 2273,
+        "rows_missing": 0
+      },
+      {
+        "id": "non_fte_amount",
+        "meaning": "non_fte_accrual",
+        "unit": "currency",
+        "source": "calculation",
+        "description": "The non-FTE share, carried for the same corroboration.",
+        "required": false,
+        "bound": true,
+        "column": "AG",
+        "header": "Non-FTE Vacation Accrual",
+        "rows_present": 2273,
+        "rows_missing": 0
+      }
+    ],
+    "components": [
+      {
+        "id": "earned_rtt_days",
+        "label": "RTT days earned",
+        "description": "The yearly RTT entitlement prorated over the months worked. Compared against the workbook's own earned-days column, which nothing read at all before this.\n",
+        "expression": "coalesce(rtt_entitlement_days, 0) / 12 * months_to_accrue",
+        "in_headers": "coalesce(Acquis\nRTT, 0) / 12 * Months to Accrue",
+        "unit": "days",
+        "total": "14749.88",
+        "rows_populated": 2273,
+        "number_format": null
+      },
+      {
+        "id": "unused_rtt_days",
+        "label": "Unused RTT days",
+        "description": "Days earned so far less days taken, floored at zero - and nil outright for an employee who has taken none, which is the convention the file itself applies.\n",
+        "expression": "if(coalesce(rtt_days_taken, 0) == 0, 0, max(earned_rtt_days - rtt_days_taken, 0))",
+        "in_headers": "if(coalesce(Pris\nRTT, 0) == 0, 0, max(RTT days earned - Pris\nRTT, 0))",
+        "unit": "days",
+        "total": "2285.16",
+        "rows_populated": 2273,
+        "number_format": null
+      },
+      {
+        "id": "rtt_amount",
+        "label": "Rebuilt RTT accrual",
+        "description": "The RTT accrual, rebuilt from the days and the rate. A twelfth of this is what the formula adds to the CP provision.\n",
+        "expression": "unused_rtt_days * daily_rate",
+        "in_headers": "Unused RTT days * Daily Salary (RTT Rate)",
+        "unit": "currency",
+        "total": "1456276.29",
+        "rows_populated": 2273,
+        "number_format": null
+      },
+      {
+        "id": "fte_split",
+        "label": "FTE plus non-FTE accrual",
+        "description": "FTE plus non-FTE accrual, re-performed and compared with the stated total - the formula this card used up to version 8; corroborating rather than deciding ever since.\n",
+        "expression": "fte_amount + non_fte_amount",
+        "in_headers": "FTE Vacation Accrual + Non-FTE Vacation Accrual",
+        "unit": "currency",
+        "total": "27905812.64",
+        "rows_populated": 2273,
+        "number_format": null
+      }
+    ],
+    "corroborations": [
+      {
+        "term": "earned_rtt_days",
+        "against": "rtt_earned_days",
+        "label": "Earned RTT Days",
+        "rows_compared": 2273,
+        "rows_agreeing": 2273,
+        "impact": "0",
+        "first_example": "",
+        "agrees": true
+      },
+      {
+        "term": "unused_rtt_days",
+        "against": "rtt_balance_days",
+        "label": "Balance RTT Days",
+        "rows_compared": 2273,
+        "rows_agreeing": 2273,
+        "impact": "0",
+        "first_example": "",
+        "agrees": true
+      },
+      {
+        "term": "rtt_amount",
+        "against": "rtt_accrual",
+        "label": "RTT Accrual Amount",
+        "rows_compared": 2273,
+        "rows_agreeing": 2272,
+        "impact": "564900.2029629629666666666666",
+        "first_example": "row 9",
+        "agrees": false
+      },
+      {
+        "term": "fte_split",
+        "against": "total_accrual",
+        "label": "TOTAL ACCRUAL",
+        "rows_compared": 2273,
+        "rows_agreeing": 2273,
+        "impact": "0",
+        "first_example": "",
+        "agrees": true
+      }
+    ],
+    "citations": [
+      {
+        "row": 9,
+        "sheet": "GPAY",
+        "kind": "stated_differs",
+        "recomputed": "59631.51",
+        "stated": "12556.5",
+        "stated_cell": "AH9",
+        "difference": "47075.01",
+        "difference_pct": 374.90550710787244,
+        "why": "The approved formula gives 47,075.01 more than the 12,556.50 this row states, which is beyond the 0.01 of rounding the business allows a row.",
+        "inputs": [
+          {
+            "id": "cp_provision",
+            "label": "Total Provision\nCP",
+            "cell": "M9",
+            "value": "12409.29",
+            "unit": "currency"
+          },
+          {
+            "id": "rtt_entitlement_days",
+            "label": "Acquis\nRTT",
+            "cell": "Q9",
+            "value": "10",
+            "unit": "days"
+          },
+          {
+            "id": "months_to_accrue",
+            "label": "Months to Accrue",
+            "cell": "Z9",
+            "value": "8",
+            "unit": "months"
+          },
+          {
+            "id": "rtt_days_taken",
+            "label": "Pris\nRTT",
+            "cell": "R9",
+            "value": "1",
+            "unit": "days"
+          },
+          {
+            "id": "daily_rate",
+            "label": "Daily Salary (RTT Rate)",
+            "cell": "W9",
+            "value": "100000",
+            "unit": "currency_per_day"
+          },
+          {
+            "id": "fte_amount",
+            "label": "FTE Vacation Accrual",
+            "cell": "AF9",
+            "value": "12556.5",
+            "unit": "currency"
+          },
+          {
+            "id": "non_fte_amount",
+            "label": "Non-FTE Vacation Accrual",
+            "cell": "AG9",
+            "value": "0",
+            "unit": "currency"
+          }
+        ],
+        "missing": []
+      },
+      {
+        "row": 1650,
+        "sheet": "GPAY",
+        "kind": "input_missing",
+        "recomputed": null,
+        "stated": null,
+        "stated_cell": "",
+        "difference": null,
+        "difference_pct": null,
+        "why": "Total Provision\nCP holds no number on this row, so the record could not be rebuilt. Nothing was summed for it: reading the gap as a zero would turn a missing input into a confident amount.",
+        "inputs": [
+          {
+            "id": "cp_provision",
+            "label": "Total Provision\nCP",
+            "cell": "M1650",
+            "value": null,
+            "unit": "currency"
+          },
+          {
+            "id": "rtt_entitlement_days",
+            "label": "Acquis\nRTT",
+            "cell": "Q1650",
+            "value": null,
+            "unit": "days"
+          },
+          {
+            "id": "months_to_accrue",
+            "label": "Months to Accrue",
+            "cell": "Z1650",
+            "value": "8",
+            "unit": "months"
+          },
+          {
+            "id": "rtt_days_taken",
+            "label": "Pris\nRTT",
+            "cell": "R1650",
+            "value": null,
+            "unit": "days"
+          },
+          {
+            "id": "daily_rate",
+            "label": "Daily Salary (RTT Rate)",
+            "cell": "W1650",
+            "value": "0",
+            "unit": "currency_per_day"
+          },
+          {
+            "id": "fte_amount",
+            "label": "FTE Vacation Accrual",
+            "cell": "AF1650",
+            "value": "0",
+            "unit": "currency"
+          },
+          {
+            "id": "non_fte_amount",
+            "label": "Non-FTE Vacation Accrual",
+            "cell": "AG1650",
+            "value": "0",
+            "unit": "currency"
+          }
+        ],
+        "missing": [
+          "cp_provision"
+        ]
+      },
+      {
+        "row": 232,
+        "sheet": "GPAY",
+        "kind": "input_missing",
+        "recomputed": null,
+        "stated": null,
+        "stated_cell": "",
+        "difference": null,
+        "difference_pct": null,
+        "why": "Total Provision\nCP holds no number on this row, so the record could not be rebuilt. Nothing was summed for it: reading the gap as a zero would turn a missing input into a confident amount.",
+        "inputs": [
+          {
+            "id": "cp_provision",
+            "label": "Total Provision\nCP",
+            "cell": "M232",
+            "value": null,
+            "unit": "currency"
+          },
+          {
+            "id": "rtt_entitlement_days",
+            "label": "Acquis\nRTT",
+            "cell": "Q232",
+            "value": null,
+            "unit": "days"
+          },
+          {
+            "id": "months_to_accrue",
+            "label": "Months to Accrue",
+            "cell": "Z232",
+            "value": "8",
+            "unit": "months"
+          },
+          {
+            "id": "rtt_days_taken",
+            "label": "Pris\nRTT",
+            "cell": "R232",
+            "value": null,
+            "unit": "days"
+          },
+          {
+            "id": "daily_rate",
+            "label": "Daily Salary (RTT Rate)",
+            "cell": "W232",
+            "value": "0",
+            "unit": "currency_per_day"
+          },
+          {
+            "id": "fte_amount",
+            "label": "FTE Vacation Accrual",
+            "cell": "AF232",
+            "value": "0",
+            "unit": "currency"
+          },
+          {
+            "id": "non_fte_amount",
+            "label": "Non-FTE Vacation Accrual",
+            "cell": "AG232",
+            "value": "0",
+            "unit": "currency"
+          }
+        ],
+        "missing": [
+          "cp_provision"
+        ]
+      }
+    ],
+    "citation_count": 3,
+    "formula_findings": [
+      {
+        "fault": "not_calculated",
+        "sheet": "GPAY",
+        "column": "AH",
+        "header": "TOTAL ACCRUAL",
+        "cell": "AH9",
+        "formula": "",
+        "in_headers": "",
+        "expected": "",
+        "rows_affected": 2273,
+        "rows_checked": 2273,
+        "why": "Every value in this column is typed or pasted: 2,273 of them. The figure is stated in this workbook rather than calculated by it, so the arithmetic behind it cannot be read here and has to be evidenced another way."
+      },
+      {
+        "fault": "not_calculated",
+        "sheet": "GPAY",
+        "column": "AC",
+        "header": "RTT Accrual Amount",
+        "cell": "AC9",
+        "formula": "",
+        "in_headers": "",
+        "expected": "",
+        "rows_affected": 2273,
+        "rows_checked": 2273,
+        "why": "Every value in this column is typed or pasted: 2,273 of them. The figure is stated in this workbook rather than calculated by it, so the arithmetic behind it cannot be read here and has to be evidenced another way."
+      },
+      {
+        "fault": "not_calculated",
+        "sheet": "GPAY",
+        "column": "K",
+        "header": "Solde\nCP N",
+        "cell": "K9",
+        "formula": "",
+        "in_headers": "",
+        "expected": "",
+        "rows_affected": 2231,
+        "rows_checked": 2231,
+        "why": "Every value in this column is typed or pasted: 2,231 of them. The figure is stated in this workbook rather than calculated by it, so the arithmetic behind it cannot be read here and has to be evidenced another way."
+      },
+      {
+        "fault": "not_calculated",
+        "sheet": "GPAY",
+        "column": "S",
+        "header": "Solde\nRTT",
+        "cell": "S9",
+        "formula": "",
+        "in_headers": "",
+        "expected": "",
+        "rows_affected": 1632,
+        "rows_checked": 1632,
+        "why": "Every value in this column is typed or pasted: 1,632 of them. The figure is stated in this workbook rather than calculated by it, so the arithmetic behind it cannot be read here and has to be evidenced another way."
+      },
+      {
+        "fault": "not_calculated",
+        "sheet": "GPAY",
+        "column": "M",
+        "header": "Total Provision\nCP",
+        "cell": "M9",
+        "formula": "",
+        "in_headers": "",
+        "expected": "",
+        "rows_affected": 2271,
+        "rows_checked": 2271,
+        "why": "Every value in this column is typed or pasted: 2,271 of them. The figure is stated in this workbook rather than calculated by it, so the arithmetic behind it cannot be read here and has to be evidenced another way."
+      },
+      {
+        "fault": "not_calculated",
+        "sheet": "GPAY",
+        "column": "O",
+        "header": "Montant charges\npatronales",
+        "cell": "O9",
+        "formula": "",
+        "in_headers": "",
+        "expected": "",
+        "rows_affected": 2232,
+        "rows_checked": 2232,
+        "why": "Every value in this column is typed or pasted: 2,232 of them. The figure is stated in this workbook rather than calculated by it, so the arithmetic behind it cannot be read here and has to be evidenced another way."
+      },
+      {
+        "fault": "not_calculated",
+        "sheet": "GPAY",
+        "column": "P",
+        "header": "Provision\nTotale",
+        "cell": "P9",
+        "formula": "",
+        "in_headers": "",
+        "expected": "",
+        "rows_affected": 2232,
+        "rows_checked": 2232,
+        "why": "Every value in this column is typed or pasted: 2,232 of them. The figure is stated in this workbook rather than calculated by it, so the arithmetic behind it cannot be read here and has to be evidenced another way."
+      },
+      {
+        "fault": "not_calculated",
+        "sheet": "GPAY",
+        "column": "T",
+        "header": "Provision\nRTT",
+        "cell": "T9",
+        "formula": "",
+        "in_headers": "",
+        "expected": "",
+        "rows_affected": 1632,
+        "rows_checked": 1632,
+        "why": "Every value in this column is typed or pasted: 1,632 of them. The figure is stated in this workbook rather than calculated by it, so the arithmetic behind it cannot be read here and has to be evidenced another way."
+      },
+      {
+        "fault": "not_calculated",
+        "sheet": "GPAY",
+        "column": "U",
+        "header": "Montant Charges\nPatronales RTT",
+        "cell": "U9",
+        "formula": "",
+        "in_headers": "",
+        "expected": "",
+        "rows_affected": 1632,
+        "rows_checked": 1632,
+        "why": "Every value in this column is typed or pasted: 1,632 of them. The figure is stated in this workbook rather than calculated by it, so the arithmetic behind it cannot be read here and has to be evidenced another way."
+      },
+      {
+        "fault": "not_calculated",
+        "sheet": "GPAY",
+        "column": "V",
+        "header": "Provision Totale\nRTT",
+        "cell": "V9",
+        "formula": "",
+        "in_headers": "",
+        "expected": "",
+        "rows_affected": 1632,
+        "rows_checked": 1632,
+        "why": "Every value in this column is typed or pasted: 1,632 of them. The figure is stated in this workbook rather than calculated by it, so the arithmetic behind it cannot be read here and has to be evidenced another way."
+      },
+      {
+        "fault": "not_calculated",
+        "sheet": "GPAY",
+        "column": "G",
+        "header": "Solde\nCP N-1",
+        "cell": "G9",
+        "formula": "",
+        "in_headers": "",
+        "expected": "",
+        "rows_affected": 1999,
+        "rows_checked": 1999,
+        "why": "Every value in this column is typed or pasted: 1,999 of them. The figure is stated in this workbook rather than calculated by it, so the arithmetic behind it cannot be read here and has to be evidenced another way."
+      }
+    ],
+    "formula_columns_audited": 12,
+    "notes": [
+      "The formula and the tolerance on this work paper are provisional: the business has not signed them off, so agreement here is evidence that the arithmetic reconciles under this basis rather than confirmation that the basis is right.",
+      "2 of 2,273 records were not recomputed, because an input the formula needs was missing. Nothing was summed for them, so the recomputed total covers only the records that could be rebuilt.",
+      "The workbook's own arithmetic was examined and 11 fault(s) were found in it. They are listed with the cell to open the file at: a figure that agrees is not evidence that the formula behind it is the approved one."
+    ],
+    "duration_ms": 976,
+    "related_checks": [
+      {
+        "check_id": "salary_per_day_follows_methodology",
+        "label": "Does the leave balance times the daily rate give the accrual the workbook states, employee by employee?",
+        "summary": "Balance in days times the daily rate: 2,272 of 2,273 rows agree, 1 differ by 564900.202962963000000 in total",
+        "citations": [
+          {
+            "row": 9,
+            "sheet": "",
+            "kind": "stated_differs",
+            "recomputed": "566666.666666666700000",
+            "stated": "1766.4637037037",
+            "stated_cell": "AC9",
+            "difference": "564900.202962963000000",
+            "difference_pct": null,
+            "why": "Does the leave balance times the daily rate give the accrual the workbook states, employee by employee?: expected 566666.666666666700000, the workbook states 1766.4637037037.",
+            "inputs": [],
+            "missing": []
+          }
+        ],
+        "citation_count": 1
+      },
+      {
+        "check_id": "leave_balance_recalculates",
+        "label": "Does opening + earned - taken +/- adjustments equal the closing balance?",
+        "summary": "CP earned minus taken against the stated balance: only 89 of 90 records agree, so this workbook derives the figure some other way and it cannot be re-performed from the columns present; RTT earned minus taken against the stated balance: 1,177 of 2,273 rows agree, 37 differ by 42.03 in total, 1,059 row(s) had no comparable figure",
+        "citations": [
+          {
+            "row": 2082,
+            "sheet": "",
+            "kind": "stated_differs",
+            "recomputed": "0",
+            "stated": "-3.5",
+            "stated_cell": "S2082",
+            "difference": "3.5",
+            "difference_pct": null,
+            "why": "Does opening + earned - taken +/- adjustments equal the closing balance?: expected 0, the workbook states -3.5.",
+            "inputs": [],
+            "missing": []
+          },
+          {
+            "row": 961,
+            "sheet": "",
+            "kind": "stated_differs",
+            "recomputed": "0",
+            "stated": "-3",
+            "stated_cell": "S961",
+            "difference": "3",
+            "difference_pct": null,
+            "why": "Does opening + earned - taken +/- adjustments equal the closing balance?: expected 0, the workbook states -3.",
+            "inputs": [],
+            "missing": []
+          },
+          {
+            "row": 189,
+            "sheet": "",
+            "kind": "stated_differs",
+            "recomputed": "0",
+            "stated": "-2",
+            "stated_cell": "S189",
+            "difference": "2",
+            "difference_pct": null,
+            "why": "Does opening + earned - taken +/- adjustments equal the closing balance?: expected 0, the workbook states -2.",
+            "inputs": [],
+            "missing": []
+          },
+          {
+            "row": 1668,
+            "sheet": "",
+            "kind": "stated_differs",
+            "recomputed": "0",
+            "stated": "-1.5",
+            "stated_cell": "S1668",
+            "difference": "1.5",
+            "difference_pct": null,
+            "why": "Does opening + earned - taken +/- adjustments equal the closing balance?: expected 0, the workbook states -1.5.",
+            "inputs": [],
+            "missing": []
+          },
+          {
+            "row": 223,
+            "sheet": "",
+            "kind": "stated_differs",
+            "recomputed": "0",
+            "stated": "-1",
+            "stated_cell": "S223",
+            "difference": "1",
+            "difference_pct": null,
+            "why": "Does opening + earned - taken +/- adjustments equal the closing balance?: expected 0, the workbook states -1.",
+            "inputs": [],
+            "missing": []
+          },
+          {
+            "row": 267,
+            "sheet": "",
+            "kind": "stated_differs",
+            "recomputed": "0",
+            "stated": "-1",
+            "stated_cell": "S267",
+            "difference": "1",
+            "difference_pct": null,
+            "why": "Does opening + earned - taken +/- adjustments equal the closing balance?: expected 0, the workbook states -1.",
+            "inputs": [],
+            "missing": []
+          },
+          {
+            "row": 287,
+            "sheet": "",
+            "kind": "stated_differs",
+            "recomputed": "0",
+            "stated": "-1",
+            "stated_cell": "S287",
+            "difference": "1",
+            "difference_pct": null,
+            "why": "Does opening + earned - taken +/- adjustments equal the closing balance?: expected 0, the workbook states -1.",
+            "inputs": [],
+            "missing": []
+          },
+          {
+            "row": 346,
+            "sheet": "",
+            "kind": "stated_differs",
+            "recomputed": "0",
+            "stated": "-1",
+            "stated_cell": "S346",
+            "difference": "1",
+            "difference_pct": null,
+            "why": "Does opening + earned - taken +/- adjustments equal the closing balance?: expected 0, the workbook states -1.",
+            "inputs": [],
+            "missing": []
+          },
+          {
+            "row": 364,
+            "sheet": "",
+            "kind": "stated_differs",
+            "recomputed": "0",
+            "stated": "-1",
+            "stated_cell": "S364",
+            "difference": "1",
+            "difference_pct": null,
+            "why": "Does opening + earned - taken +/- adjustments equal the closing balance?: expected 0, the workbook states -1.",
+            "inputs": [],
+            "missing": []
+          },
+          {
+            "row": 373,
+            "sheet": "",
+            "kind": "stated_differs",
+            "recomputed": "0",
+            "stated": "-1",
+            "stated_cell": "S373",
+            "difference": "1",
+            "difference_pct": null,
+            "why": "Does opening + earned - taken +/- adjustments equal the closing balance?: expected 0, the workbook states -1.",
+            "inputs": [],
+            "missing": []
+          }
+        ],
+        "citation_count": 1096
+      },
+      {
+        "check_id": "accrual_composition_reperforms",
+        "label": "Does the stated total equal the CP provision plus a twelfth of the RTT accrual, employee by employee?",
+        "summary": "CP provision plus a twelfth of the RTT accrual against the stated total: 2,271 of 2,273 rows agree, 2 row(s) had no comparable figure",
+        "citations": [],
+        "citation_count": 2
+      },
+      {
+        "check_id": "cp_provision_rebuilds",
+        "label": "Does the stated CP provision equal the prior plus the current period's provision, employee by employee?",
+        "summary": "Prior plus current period CP provision against the stated total: 2,271 of 2,273 rows agree, 2 row(s) had no comparable figure",
+        "citations": [],
+        "citation_count": 2
+      },
+      {
+        "check_id": "rtt_provision_values_the_balance",
+        "label": "Does the RTT provision the workbook states in money equal the RTT balance in days at the employee's daily rate?",
+        "summary": "RTT balance in days times the daily rate: 2,272 of 2,273 rows agree, 1 differ by 897194.44 in total",
+        "citations": [
+          {
+            "row": 9,
+            "sheet": "",
+            "kind": "stated_differs",
+            "recomputed": "900000",
+            "stated": "2805.56",
+            "stated_cell": "T9",
+            "difference": "897194.44",
+            "difference_pct": null,
+            "why": "Does the RTT provision the workbook states in money equal the RTT balance in days at the employee's daily rate?: expected 900000, the workbook states 2805.56.",
+            "inputs": [],
+            "missing": []
+          }
+        ],
+        "citation_count": 1
+      }
+    ],
+    "complete": false,
+    "ties": false
+  },
+  "report": {
+    "headline": "30.0 out of 100, High risk (provisional). 30 checks ran; 7 failed and 15 need a person.",
+    "summary": "Evidence completeness: 1 of 1 check could not be assessed because required evidence was missing. Calculation accuracy: 10 of 22 checks found exceptions that were not resolved. Period validation: 1 of 2 checks could not be fully confirmed. Trend analysis: 1 of 1 check could not be validated. Evidence appropriateness and PII review passed.",
+    "next_steps": [
+      "Obtain the missing approval evidence for the France vacation accrual entry.",
+      "Obtain the missing vacation provision file for the France vacation accrual entry.",
+      "Obtain an independent salary source to validate the daily rates used in the accrual calculation.",
+      "Confirm the classification for the rows not covered by the classification check.",
+      "Confirm the support for the rows that could not be rebuilt in the CP provision and accrual composition re-performance.",
+      "Confirm the cause of the RTT provision valuation exception and the salary-per-day methodology exception for the affected row, including why the expected amount did not agree to the actual amount shown in the workbook exception detail: expected 566666.666666666700000 and actual 1766.4637037037 said in the review data set that supports the failed check is not independently evidenced here except as the check conclusion text states it)."
+    ],
+    "untraced_numbers": [
+      "566666.666666666700000",
+      "1766.4637037037"
+    ]
+  },
+  "audit": {
+    "versions": {
+      "je_type": "vacation-accrual-france@11#b84e1cc9",
+      "rules": "4#51498a9b",
+      "harness": "2.0.0-dev"
+    },
+    "file_sha256": "5100081e33fa8386bcfbd51fd467b268e4eb585851a5c6347987e26a741b3394",
+    "file_name": "305800 - Copy (8).xlsx",
+    "size_bytes": 2730747,
+    "layout_fingerprint": "537bc731a196df1e2454f8e0a77665bcfae8e698948da2dad44d70b89ab0022c",
+    "reuse_hit": false,
+    "layout_hit": false,
+    "ai_calls": [
+      {
+        "call": "AI-1",
+        "step": "8",
+        "name": "Reading the workbook independently",
+        "model": "gpt-5.5",
+        "input_tokens": 3602,
+        "cached_tokens": 0,
+        "output_tokens": 339,
+        "reasoning_tokens": 0,
+        "cost_usd": "0.02818",
+        "latency_ms": 4937,
+        "retries": 0,
+        "schema_valid": true
+      },
+      {
+        "call": "AI-X",
+        "step": "13b",
+        "name": "Grouping the exceptions",
+        "model": "gpt-5.5",
+        "input_tokens": 1156,
+        "cached_tokens": 0,
+        "output_tokens": 126,
+        "reasoning_tokens": 0,
+        "cost_usd": "0.00956",
+        "latency_ms": 2539,
+        "retries": 0,
+        "schema_valid": true
+      },
+      {
+        "call": "AI-3",
+        "step": "14",
+        "name": "Judging the results",
+        "model": "gpt-5.5",
+        "input_tokens": 6910,
+        "cached_tokens": 0,
+        "output_tokens": 4008,
+        "reasoning_tokens": 0,
+        "cost_usd": "0.15479",
+        "latency_ms": 24767,
+        "retries": 0,
+        "schema_valid": true
+      },
+      {
+        "call": "AI-4",
+        "step": "15",
+        "name": "Challenging the conclusions",
+        "model": "gpt-5.5",
+        "input_tokens": 8277,
+        "cached_tokens": 0,
+        "output_tokens": 2554,
+        "reasoning_tokens": 380,
+        "cost_usd": "0.118005",
+        "latency_ms": 18227,
+        "retries": 0,
+        "schema_valid": true
+      },
+      {
+        "call": "AI-5",
+        "step": "18",
+        "name": "Writing the report",
+        "model": "gpt-5.5",
+        "input_tokens": 3730,
+        "cached_tokens": 0,
+        "output_tokens": 180,
+        "reasoning_tokens": 0,
+        "cost_usd": "0.02405",
+        "latency_ms": 3775,
+        "retries": 0,
+        "schema_valid": true
+      }
+    ],
+    "tool_runs": [],
+    "flags": [
+      "challenge_disagreed",
+      "incomplete_row_coverage",
+      "map_unverified",
+      "negative_accrual",
+      "status_overridden",
+      "untraced_number"
+    ],
+    "total_cost_usd": "0.334585",
+    "total_tokens": 30882,
+    "je_type_confidence": 0.9,
+    "je_type_corroborated": true,
+    "je_type_source": "shape",
+    "duration_ms": 99596
+  },
+  "created_at": "2026-11-08T17:59:58.440217Z",
+  "reused_from": null
+}

@@ -13,8 +13,9 @@ from decimal import Decimal
 
 from review.models.context import BusinessRules, JETypeContext
 from review.models.evidence import Figure
+from review.models.recalculation import EntryRecalculation
 from review.models.result import AreaScore, Score, ScoringMethod
-from review.models.verdicts import CheckOutcome
+from review.models.verdicts import CheckOutcome, Status
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +27,14 @@ def score_review(
     rules: BusinessRules,
     outcomes: dict[str, CheckOutcome],
     evidence_pack: dict[str, tuple[Figure, ...]],
+    recalculation: EntryRecalculation | None = None,
 ) -> Score:
-    """The weighted score, its band, and whether anything is still waiting for a person."""
+    """The weighted score, its band, and whether anything is still waiting for a person.
+
+    ``recalculation`` is the entry work paper from step 13c, read only by areas scored
+    ``entry_tolerance``. Optional so a caller that has none - a re-score of stored
+    statuses, a test of one area - still scores every other area identically.
+    """
     areas: list[AreaScore] = []
 
     for area, spec in je_type.areas.items():
@@ -35,7 +42,7 @@ def score_review(
         figures = tuple(
             figure for outcome in checks for figure in evidence_pack.get(outcome.check_id, ())
         )
-        value = _score_area(spec.method, rules, checks, figures)
+        value = _score_area(spec.method, rules, checks, figures, recalculation)
         areas.append(
             AreaScore(
                 area=area,
@@ -64,6 +71,7 @@ def _score_area(
     rules: BusinessRules,
     checks: list[CheckOutcome],
     figures: tuple[Figure, ...],
+    recalculation: EntryRecalculation | None = None,
 ) -> float:
     if not checks:
         # A weighted area with no check contributes a score derived from nothing. The
@@ -81,6 +89,8 @@ def _score_area(
             return _by_exception_rate(figures, fallback=min(credits))
         case ScoringMethod.IMPACT_SHARE:
             return _by_impact_share(figures, fallback=min(credits))
+        case ScoringMethod.ENTRY_TOLERANCE:
+            return _by_entry_tolerance(recalculation, rules, fallback=float(min(credits)))
 
 
 def _by_exception_rate(figures: tuple[Figure, ...], *, fallback: float) -> float:
@@ -119,6 +129,35 @@ def _by_impact_share(figures: tuple[Figure, ...], *, fallback: float) -> float:
         return fallback if affected else _FULL
     share = min(Decimal(1), affected / base)
     return float(Decimal(_FULL) * (Decimal(1) - share))
+
+
+def _by_entry_tolerance(
+    paper: EntryRecalculation | None, rules: BusinessRules, *, fallback: float
+) -> float:
+    """The entry rebuilt against what was posted, scored on that answer alone.
+
+    The one question the area exists to answer, answered by the one artefact that answers
+    it over every record rather than one check at a time:
+
+    * inside tolerance - full marks, however many checks inside the area are still being
+      argued about. Deliberately accepted, and the reason this method exists: the failure
+      is still on the card, still in the check list and still waiting for whoever it is
+      assigned to; it no longer decides the score on its own.
+    * outside it - the credit the business gives a failure. An entry that does not rebuild
+      to what was posted has failed this area whatever its individual checks found, and
+      scoring it off those checks is how a 100 could appear beside a Fail badge.
+    * no answer at all - the checks decide, as they did before this method existed.
+      ``within_tolerance`` is already ``None`` rather than ``False`` where there was
+      nothing to compare, so a missing answer is never read as a yes or as a no.
+
+    ``api.pydanticmodels.review_models.area_status`` badges the area off the same three
+    cases, so the number and the badge on one card cannot disagree.
+    """
+    if paper is None or paper.within_tolerance is None:
+        return fallback
+    if paper.within_tolerance:
+        return _FULL
+    return float(rules.credit_for(Status.FAIL, needs_review=False))
 
 
 def _reason(checks: list[CheckOutcome], figures: tuple[Figure, ...]) -> str:

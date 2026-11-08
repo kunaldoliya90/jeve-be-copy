@@ -16,7 +16,7 @@ from api.consts import ErrorCode, JETypeSource, SSEEvent
 from review.models.context import OBSERVATION_AREA, JETypeContext
 from review.models.evidence import EvidenceItem
 from review.models.recalculation import EntryRecalculation
-from review.models.result import AICallRecord, ReviewResult
+from review.models.result import AICallRecord, ReviewResult, ScoringMethod
 from review.models.split_summary import SplitSummary
 from review.models.verdicts import CheckOutcome, ReviewFlag, Status, stricter
 
@@ -428,9 +428,11 @@ class ReviewDetail(BaseModel):
                     method=area.method.value,
                     score=area.score,
                     status=area_status(
-                        [outcome for outcome in result.checks if outcome.area == area.area]
+                        [outcome for outcome in result.checks if outcome.area == area.area],
+                        method=area.method,
+                        recalculation=result.recalculation,
                     ),
-                    reason=area.reason,
+                    reason=plain_area_reason(area.area, area.reason, result.recalculation),
                     checks=[
                         stored_check(outcome, je_spec)
                         for outcome in result.checks
@@ -480,19 +482,140 @@ def _source_of(result: ReviewResult) -> JETypeSource:
     return source
 
 
-def area_status(outcomes: list[CheckOutcome]) -> Status:
-    """An area is no better than its worst check.
+def area_status(
+    outcomes: list[CheckOutcome],
+    *,
+    method: ScoringMethod | str | None = None,
+    recalculation: EntryRecalculation | None = None,
+) -> Status:
+    """An area is no better than its worst check - unless its checks are not what it is
+    scored on.
 
-    Separate from the weighted score on purpose: an exception-rate area with three bad rows
-    in forty thousand scores in the nineties and still contains a failure, and a card badged
-    from the score alone would read as a pass.
+    The default is the strictest check, and it is separate from the weighted score on
+    purpose: an exception-rate area with three bad rows in forty thousand scores in the
+    nineties and still contains a failure, and a card badged from the score alone would
+    read as a pass.
+
+    An area scored ``entry_tolerance`` is the exception, because its number does not come
+    from its checks either. It is badged from the same work paper that scores it, on the
+    one question that paper answers: did the entry rebuild to what was posted, inside the
+    stated tolerance. Inside it passes, outside it fails. Badging that area off its
+    strictest check instead is what put a red "Fail" on a card reading 100/100 - two true
+    answers to two different questions, printed as though they were one.
+
+    Deliberately the tolerance answer rather than the paper's own ``status``, which is
+    ``partial`` wherever a record could not be read. The badge now says what the score
+    says, and the records that could not be rebuilt are named in the card's own sentence
+    instead of turning a full score amber.
+
+    Where the work paper could not answer - ``within_tolerance`` is ``None``, so there was
+    nothing to compare - the checks decide the badge, exactly as they decide the score.
     """
+    if (
+        method == ScoringMethod.ENTRY_TOLERANCE
+        and recalculation is not None
+        and recalculation.within_tolerance is not None
+    ):
+        return Status.PASS if recalculation.within_tolerance else Status.FAIL
+
     if not outcomes:
         return Status.UNABLE_TO_VALIDATE
     worst = outcomes[0].final_status
     for outcome in outcomes[1:]:
         worst = stricter(worst, outcome.final_status)
     return worst
+
+
+CALCULATION_AREA = "calculation_accuracy"
+
+_WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+
+
+def _count(value: int) -> str:
+    """Small counts read as words in a sentence; larger ones stay as figures."""
+    return _WORDS[value] if 0 <= value < len(_WORDS) else f"{value:,}"
+
+
+def plain_area_reason(area: str, reason: str, recalculation: EntryRecalculation | None) -> str:
+    """An area's reason in the words a business reader uses, where the facts allow one.
+
+    The engine writes each area's reason from the decisive figure, in the vocabulary the
+    figure was produced in - "2,273 employee rows carry only 1 distinct reference(s), so
+    the column is redacted or constant". Every word of that is true and a reviewer chasing
+    the finding needs it, but the card it lands on is read in two seconds by somebody
+    deciding whether to look further.
+
+    So for the one area where the work paper states the finding as a figure anyone can
+    read - the entry rebuilt against what was posted - the reason is written from the work
+    paper instead. Derived on the way out rather than stored, so a review recorded before
+    this existed reads the same way as one recorded after it.
+
+    Everything else keeps the engine's sentence: a plain wording invented for an area
+    whose facts this function does not hold would be a guess, and a guess on an audit
+    report is worse than a sentence the reader has to work at.
+
+    Note for anyone changing the wording: the frontend writes the same sentence from the
+    same fields (``lib/parameters.ts``) for reviews served by an older build. The two are
+    meant to agree.
+    """
+    if area != CALCULATION_AREA or recalculation is None:
+        return reason
+    return _calculation_reason(recalculation) or reason
+
+
+def _difference(value: Decimal) -> str:
+    """A difference in whole units, unless whole units would round it away.
+
+    A rebuild that is four hundredths out is not "0 lower than the booked amount" - that
+    sentence reads as a tool that cannot subtract. Dust keeps the decimals that make it
+    legible as dust.
+    """
+    figure = abs(value)
+    return f"{figure:,.0f}" if figure >= 1 else f"{figure:,.2f}"
+
+
+def _calculation_reason(paper: EntryRecalculation) -> str:
+    """The rebuild against what was posted, in two short sentences.
+
+    Only ever the total difference and how many records carry it. Where several records
+    are out, the count is the finding and the per-record figures are not repeated here -
+    they are the citations on the work paper, which is where a reviewer goes next.
+
+    A difference inside the stated tolerance says so on the same line as the figure. It is
+    the same answer the area is now scored on, and a card reading "47,075 higher" beside a
+    score of 100 with nothing joining the two is a card that looks wrong.
+    """
+    if paper.difference is None:
+        return ""
+
+    sentences: list[str] = []
+    figure = _difference(paper.difference)
+    inside = paper.within_tolerance is True
+
+    if Decimal(figure.replace(",", "")) == 0:
+        # Only where the figure itself is nothing. A 47,075 that the tolerance allowed is
+        # a tie, but "matches" is not what it says, and this card is read on its own.
+        sentences.append("Our total matches the booked amount.")
+    else:
+        direction = "lower" if paper.difference < 0 else "higher"
+        tolerance = ", inside the tolerance allowed" if inside else ""
+        sentences.append(f"Our total is {figure} {direction} than the booked amount{tolerance}.")
+
+        out = paper.rows_recomputed - paper.rows_agreeing
+        if out == 1:
+            sentences.append("The cause is one employee row.")
+        elif out > 1:
+            sentences.append(f"The cause is {_count(out)} employee rows.")
+
+    # A rebuild that could not read every record is not a complete account of the
+    # difference, and the card must not read as though it were.
+    if paper.rows_incomplete > 0:
+        rows = "row" if paper.rows_incomplete == 1 else "rows"
+        sentences.append(
+            f"{_count(paper.rows_incomplete).capitalize()} {rows} could not be rebuilt."
+        )
+
+    return " ".join(sentences)
 
 
 def stored_check(outcome: CheckOutcome, je_spec: JETypeContext | None) -> CheckView:

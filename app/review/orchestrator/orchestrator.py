@@ -953,7 +953,7 @@ class ReviewOrchestrator:
 
         # --- step 17: the score, pure arithmetic over those statuses ---
         await self._step(run, "17", "Scoring")
-        run.score = score_review(je_spec, rules, outcomes, pack)
+        run.score = score_review(je_spec, rules, outcomes, pack, run.recalculation)
         # The score reaches the stream before the report is written, which is the
         # one figure a reader waiting on a review actually wants early.
         await self._emit(
@@ -1743,6 +1743,7 @@ class _TableCheck(NamedTuple):
 
     check_id: str
     label: str
+    short: str
     figures: tuple[Figure, ...]
 
 
@@ -1762,7 +1763,7 @@ def _related_checks(
         figures = pack.get(check.id, ())
         if not any(figure.exception_count for figure in figures):
             continue
-        found.append(_TableCheck(check.id, check.question.strip(), figures))
+        found.append(_TableCheck(check.id, check.question.strip(), check.short, figures))
     return found
 
 
@@ -1804,6 +1805,7 @@ def _related_recalc_check(check: _TableCheck) -> RelatedRecalcCheck:
     return RelatedRecalcCheck(
         check_id=check.check_id,
         label=check.label,
+        short=check.short,
         summary="; ".join(figure.summary for figure in check.figures if figure.summary),
         citations=citations,
         citation_count=sum(figure.exception_count for figure in check.figures),

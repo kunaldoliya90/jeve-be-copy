@@ -68,6 +68,14 @@ class CheckSpec(_Frozen):
     decided_by: DecidedBy
     recipe: CheckRecipe | None = Field(default=None)
     risk: str = Field(default="", description="The business risk this check addresses")
+    short: str = Field(
+        default="",
+        description=(
+            "The check named in two or three words, for a table of findings where the "
+            "question itself does not fit. Falls back to the question, so a check that "
+            "declares none is listed rather than left out."
+        ),
+    )
 
     @model_validator(mode="after")
     def _figures_checks_need_a_recipe(self) -> "CheckSpec":
@@ -290,6 +298,46 @@ class RecalcExplainedSpec(_Frozen):
     caveats: tuple[str, ...] = Field(default=(), description="What a reader should be told")
 
 
+class WalkthroughStepSpec(_Frozen):
+    """One step of the formula as a reader without the spreadsheet sees it.
+
+    Three fields because a step is read three ways on the report: ``line`` is the sentence
+    in the numbered list, ``label`` names the step in the worked example beside it, and
+    ``shows`` is how that step's arithmetic is written out with real numbers in it.
+
+    ``shows`` is a template over ``{name}`` placeholders - an input, a derived term, or an
+    earlier step's id - and ``expr`` is what actually produces the number. They are
+    separate on purpose: ``max(earned_rtt_days - rtt_days_taken, 0)`` is the arithmetic,
+    and "6.67 - 1" is what a reader needs to see. Code never invents either; both are the
+    business's, in this file, and a step that declares no ``expr`` is prose only.
+    """
+
+    id: str = Field(..., min_length=1, description="What later steps refer to this one by")
+    line: str = Field(..., min_length=1, description="The step as one plain sentence")
+    label: str = Field(default="", description="The step's name in the worked example")
+    shows: str = Field(default="", description="The arithmetic, as `{name}` placeholders")
+    expr: str = Field(default="", description="What produces the number, over inputs and terms")
+
+
+class WalkthroughSpec(_Frozen):
+    """The formula in plain language, and the shape of the worked example under it.
+
+    Alongside ``explained`` rather than inside it: that one is the full prose account and
+    stays as written, while this is the short form the report leads with - the formula in
+    one line, six sentences, and the steps the example walks a record through.
+    """
+
+    total: str = Field(
+        default="", description="The formula in one plain line, as a reader should read it"
+    )
+    stated_label: str = Field(
+        default="",
+        description="What the workbook's own amount for a record is called in a table of findings",
+    )
+    steps: tuple[WalkthroughStepSpec, ...] = Field(default=())
+    footnote: str = Field(default="", description="What the formula does not cover")
+
+
 class RecalculationSpec(_Frozen):
     """The approved basis for regenerating this entry's value, owned by the business.
 
@@ -349,6 +397,13 @@ class RecalculationSpec(_Frozen):
     )
     worked_example: str = Field(
         default="", description="The business's own worked example, shown beside the formula"
+    )
+    walkthrough: WalkthroughSpec | None = Field(
+        default=None,
+        description=(
+            "The short, plain form of the formula: one line, numbered steps, and the "
+            "arithmetic each step shows when a record is walked through it."
+        ),
     )
     explained: RecalcExplainedSpec | None = Field(
         default=None, description="The formula walked through in plain language, step by step"

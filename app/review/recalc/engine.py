@@ -56,11 +56,15 @@ from review.models.recalculation import (
     RecalcInputReading,
     RecalcRow,
     RoundingMode,
+    RowDiagnosis,
+    Walkthrough,
+    WalkthroughStep,
 )
 from review.models.verdicts import Status
 from review.models.workbook_data import Cell, Sheet
 from review.recalc.formula import CompiledFormula, compile_formula, expand, substitute
 from review.recalc.formula_audit import audit_formulas
+from review.recalc.row_diagnosis import diagnose_row
 from review.tools.base import BoundTable, ToolContext, ToolError
 from review.utils.sheet_utils import column_index, column_letter
 
@@ -656,6 +660,7 @@ def _finish(
     within = None if difference is None else abs(difference) <= allowed
     complete = found.rows_total > 0 and found.rows_recomputed == found.rows_total
     status = _status(found, within, complete)
+    citations = _choose(found.citations, cap=CITATION_CAP)
 
     return EntryRecalculation(
         basis=basis.model_copy(update={"tolerance_amount": tolerance_amount}),
@@ -674,13 +679,49 @@ def _finish(
         inputs=readings,
         components=_components(spec, found, readings, display),
         corroborations=_corroborations(spec, found, by_meaning),
-        citations=_choose(found.citations, cap=CITATION_CAP),
+        citations=citations,
         citation_count=found.citation_count,
         formula_findings=audit[0],
         formula_columns_audited=audit[1],
         notes=_notes(spec, found, booked, readings, audit[0]),
+        walkthrough=_walkthrough(spec),
+        row_diagnosis=_row_diagnosis(spec, citations, difference),
         duration_ms=int((time.monotonic() - started) * 1000),
     )
+
+
+def _walkthrough(spec: RecalculationSpec) -> Walkthrough | None:
+    """The business's short form of the formula, carried as written."""
+    declared = spec.walkthrough
+    if declared is None:
+        return None
+    return Walkthrough(
+        total=declared.total,
+        stated_label=declared.stated_label,
+        steps=tuple(
+            WalkthroughStep(id=step.id, line=step.line, label=step.label)
+            for step in declared.steps
+        ),
+        footnote=declared.footnote,
+    )
+
+
+def _row_diagnosis(
+    spec: RecalculationSpec,
+    citations: Sequence[RecalcCitation],
+    difference: Decimal | None,
+) -> RowDiagnosis | None:
+    """The largest cited record, traced to the one input that explains it.
+
+    The largest rather than the first: a reviewer handed one record to look at should be
+    handed the one carrying the money. Where nothing single explains it, this is ``None``
+    and the report shows the citations as it always has.
+    """
+    cited = [citation for citation in citations if citation.kind == "stated_differs"]
+    if not cited:
+        return None
+    worst = max(cited, key=_magnitude)
+    return diagnose_row(spec, worst, entry_difference=difference)
 
 
 def _status(found: _Pass, within: bool | None, complete: bool) -> Status:

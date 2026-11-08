@@ -1,13 +1,24 @@
-"""Step 17's reason line: one sentence, in the decisive figure's own words.
+"""Step 17: the reason line, and how an area turns its checks into a score.
 
-No semicolon-separated tally, no check id - the card already shows the check count and
-which ones are waiting on a person, so the only thing worth this sentence is the figure
-that actually decided the score.
+The reason is one sentence in the decisive figure's own words - no semicolon-separated
+tally, no check id, because the card already shows the check count and which ones are
+waiting on a person.
 """
 
+from decimal import Decimal
+
+from api.consts import RiskRating
+from review.models.context import Band, BusinessRules
 from review.models.evidence import Figure
+from review.models.recalculation import (
+    BookedAmount,
+    BookedMethod,
+    EntryRecalculation,
+    RecalcBasis,
+)
+from review.models.result import ScoringMethod
 from review.models.verdicts import CheckOutcome, Status
-from review.orchestrator.scoring import _reason
+from review.orchestrator.scoring import _reason, _score_area
 
 
 def _outcome(
@@ -68,3 +79,61 @@ def test_reason_ignores_a_figure_that_is_not_decisive() -> None:
 
 def test_reason_for_an_area_with_no_checks() -> None:
     assert _reason([], ()) == "No check ran for this area."
+
+
+_RULES = BusinessRules(
+    version=1,
+    credits=dict.fromkeys(Status, 0) | {Status.PASS: 100},
+    bands=[Band(min=0, label="High risk", risk=RiskRating.HIGH)],
+)
+
+
+def _paper(**overrides: object) -> EntryRecalculation:
+    fields: dict[str, object] = {
+        "basis": RecalcBasis(table="employee_working", formula="days x rate"),
+        "booked": BookedAmount(method=BookedMethod.POSTING_DEBITS, total=Decimal("100.00")),
+        "difference": Decimal("1.00"),
+        "within_tolerance": True,
+        "rows_total": 10,
+        "rows_recomputed": 10,
+        "rows_agreeing": 9,
+    }
+    fields.update(overrides)
+    return EntryRecalculation(**fields)
+
+
+def test_entry_tolerance_passes_the_area_when_the_entry_ties() -> None:
+    """The question the area is asked, answered over every record rather than one check."""
+    assert (
+        _score_area(
+            ScoringMethod.ENTRY_TOLERANCE,
+            _RULES,
+            [_outcome("a", Status.FAIL)],
+            (),
+            _paper(),
+        )
+        == 100.0
+    )
+
+
+def test_entry_tolerance_falls_back_to_the_weakest_check_without_a_work_paper() -> None:
+    """A missing answer is never read as a yes."""
+    weakest = _score_area(
+        ScoringMethod.ENTRY_TOLERANCE, _RULES, [_outcome("a", Status.FAIL)], (), None
+    )
+    assert weakest == 0.0
+
+
+def test_entry_tolerance_falls_back_where_there_was_nothing_to_compare() -> None:
+    """``within_tolerance`` is None when the booked side could not be read."""
+    nothing = _paper(within_tolerance=None, difference=None)
+    assert (
+        _score_area(
+            ScoringMethod.ENTRY_TOLERANCE,
+            _RULES,
+            [_outcome("a", Status.FAIL)],
+            (),
+            nothing,
+        )
+        == 0.0
+    )

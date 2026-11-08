@@ -250,9 +250,13 @@ reperformance:
 # The arithmetic runs either way; what changes is whether agreement may be relied on, and the
 # work paper says so on its face.
 #
-# `tolerance_pct` is unchanged at 1% (widened from 0.1% on 2026-11-04 on business
-# instruction). It is headroom for a smaller entry of this type, not a response to these two:
-# the dust each real file carries is cents against a multi-million-euro entry.
+# `tolerance_pct` is 0.01% (business instruction, 2026-11-09; it was 0.1% until 2026-11-04
+# and 1% between those dates). It is headroom for a smaller entry of this type, not a
+# response to the files seen so far: the dust each real file carries is cents against a
+# multi-million-euro entry, and 0.01% of one of those is still a few thousand euro. Note
+# what narrowing it does, now that `calculation_accuracy` scores by `entry_tolerance`: a
+# difference outside it fails that area outright rather than merely being reported, so this
+# number moves a compliance score on its own.
 recalculation:
   table: calculation
   record_key: employee_ref
@@ -260,7 +264,7 @@ recalculation:
   formula: cp_provision + rtt_amount / 12
   sign: a positive amount is a debit to the expense accounts
   day_count: the approved denominator stated in the methodology, never an assumed 30
-  tolerance_pct: 1
+  tolerance_pct: 0.01
   row_tolerance: 0.01
   provisional_basis: true
   rounding: { decimals: 2, mode: half_up }
@@ -275,6 +279,51 @@ recalculation:
     accruals, 12,556.50 and 0.00, also add to 12,556.50 - re-performed and compared separately
     below, since they corroborate the figure rather than build it. Every record's total added
     together gives the entry.
+  # The short form of the formula: one line, one sentence per step, and the arithmetic each
+  # step shows when a record is walked through it. `explained` below is the full prose
+  # account and stays as it is - this is what the report leads with, because a reviewer
+  # reading a difference wants the six lines before the six paragraphs.
+  #
+  # `shows` is a display template over `{name}` placeholders - an input, a derived term, or
+  # an earlier step's id - and `expr` is what produces the number. They are deliberately
+  # separate: `max(earned_rtt_days - rtt_days_taken, 0)` is the arithmetic, and "6.67 - 1"
+  # is what a reader needs to see.
+  walkthrough:
+    stated_label: Employee total
+    total: Total = Holiday amount (CP) + 1/12 of the value of unused RTT days
+    footnote: Only for FTE and Non-FTE employees. Does not include employer charges.
+    steps:
+      - id: days_earned
+        line: "Days earned = yearly RTT days ÷ 12 × months worked."
+        label: Days earned
+        shows: "{rtt_entitlement_days} ÷ 12 × {months_to_accrue}"
+        expr: coalesce(rtt_entitlement_days, 0) / 12 * months_to_accrue
+      - id: days_taken
+        line: If the employee took no RTT days, the RTT amount is 0.
+        label: Days taken
+        shows: "{rtt_days_taken}"
+        expr: coalesce(rtt_days_taken, 0)
+      - id: days_left
+        line: "Days left = days earned − days taken (not less than 0)."
+        label: Days left
+        shows: "{days_earned} − {days_taken}"
+        expr: unused_rtt_days
+      - id: value
+        line: "Value = days left × daily salary."
+        label: Value
+        shows: "{days_left} × {daily_rate}"
+        expr: unused_rtt_days * daily_rate
+      - id: month_share
+        line: Divide the value by 12.
+        label: Divide by 12
+        shows: "{value} ÷ 12"
+        expr: unused_rtt_days * daily_rate / 12
+      - id: total
+        line: Add the holiday amount (CP).
+        label: Add holiday amount
+        shows: "{month_share} + {cp_provision}"
+        expr: cp_provision + rtt_amount / 12
+
   # The same record as `worked_example` above, in plain language for a reader who has never
   # seen this formula. Fixed numbers, chosen once and checked against the identities above
   # rather than read live from any particular review - the same convention `worked_example`
@@ -520,11 +569,16 @@ evidence:
 #   calculation_accuracy combines the old accrual_reperformance and je_reconciliation (the
 #     number itself, and whether the right number got posted) with the four employee-level
 #     checks that used to be scored separately by exception rate and impact share:
-#     population, classification, salary_validation and leave_validation. All of it now
-#     scores by weakest check. That is a real tightening, deliberately accepted: a handful
-#     of bad employee rows out of thousands now fails this area outright, where it used to
-#     score in the high nineties. A reviewer reading "0/100" here must check which check
-#     failed before reading it as the whole calculation being wrong.
+#     population, classification, salary_validation and leave_validation.
+#
+#     It scored by weakest check until 2026-11-09, which read a handful of bad employee
+#     rows out of thousands as 0/100 for the whole calculation even on an entry that
+#     rebuilt to the posted amount inside tolerance. It now scores by `entry_tolerance`:
+#     the work paper's own entry-level answer, over every record it could read, under the
+#     tolerance stated below - 100 where the entry ties, and the weakest check wherever
+#     the work paper cannot answer at all. Deliberately accepted, and business-asked: a
+#     failed check inside the area no longer decides the score on its own. It is still on
+#     the card, still in the check list, and still waiting for whoever it is assigned to.
 #   pii is no longer an observation. Employee data on the calculation tab and the employee
 #     master is still expected and still not a finding; only a leak onto the SAP-facing
 #     posting tab fails this area, so it is expected to read 100 on almost every review.
@@ -541,7 +595,7 @@ evidence:
 areas:
   evidence_completeness: { weight: 30, method: baseline_share }
   evidence_appropriateness: { weight: 10, method: weakest_check }
-  calculation_accuracy: { weight: 30, method: weakest_check }
+  calculation_accuracy: { weight: 30, method: entry_tolerance }
   period: { weight: 10, method: weakest_check }
   pii: { weight: 10, method: weakest_check }
   trend: { weight: 10, method: weakest_check }
@@ -589,6 +643,7 @@ checks:
     recipe: { tool: salary_validate, args: { table: calculation, master: employee_master } }
 
   - id: salary_per_day_follows_methodology
+    short: RTT days value
     area: calculation_accuracy
     question: >
       Does the leave balance times the daily rate give the accrual the workbook states,
@@ -598,6 +653,7 @@ checks:
     recipe: { tool: reperform, args: { table: calculation, identities: [rtt_valuation] } }
 
   - id: leave_balance_recalculates
+    short: Leave balance
     area: calculation_accuracy
     question: Does opening + earned - taken +/- adjustments equal the closing balance?
     decided_by: figures
@@ -615,6 +671,7 @@ checks:
   # check above through `rtt_accrual`, so a permanently-partial coverage here would be a
   # landmine on every clean file of this type.
   - id: rtt_balance_rebuilds
+    short: RTT balance
     area: calculation_accuracy
     question: >
       Does the RTT balance used for valuation reproduce from the days earned to date and the
@@ -632,6 +689,7 @@ checks:
   # whether what was produced is what was booked. The first can hold while the second fails,
   # which is precisely the case nothing else here would catch.
   - id: entry_total_recalculates
+    short: Employee total
     area: calculation_accuracy
     question: >
       Can the amount that was posted be regenerated from the approved formula, record by
@@ -666,6 +724,7 @@ checks:
   # without touching the total or the split would still tie. This check rebuilds the total
   # from the two components an employee's accrual is actually made of.
   - id: accrual_composition_reperforms
+    short: Accrual composition
     area: calculation_accuracy
     question: >
       Does the stated total equal the CP provision plus a twelfth of the RTT accrual,
@@ -682,6 +741,7 @@ checks:
   # total from would still tie there. This rebuilds the CP provision from the two columns the
   # payroll extract actually types.
   - id: cp_provision_rebuilds
+    short: CP provision
     area: calculation_accuracy
     question: >
       Does the stated CP provision equal the prior plus the current period's provision,
@@ -729,6 +789,7 @@ checks:
       { tool: reperform, args: { table: calculation, identities: [cp_provision_total_sums] } }
 
   - id: rtt_provision_values_the_balance
+    short: RTT provision
     area: calculation_accuracy
     question: >
       Does the RTT provision the workbook states in money equal the RTT balance in days at
