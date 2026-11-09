@@ -217,3 +217,39 @@ def test_every_other_area_is_still_badged_by_its_worst_check() -> None:
         recalculation=_paper(within_tolerance=True),
     )
     assert badge is Status.FAIL
+
+
+def test_a_baseline_share_area_is_partial_while_any_required_layer_is_missing() -> None:
+    """Three of four baseline layers: 75, and a badge that says so rather than a pass."""
+    badge = area_status(
+        [_outcome("evidence_baseline", Status.PARTIAL)],
+        method=ScoringMethod.BASELINE_SHARE,
+        score=75.0,
+    )
+    assert badge is Status.PARTIAL
+
+
+def test_a_baseline_share_area_passes_only_on_the_whole_baseline() -> None:
+    badge = area_status(
+        [_outcome("evidence_baseline", Status.PASS)],
+        method=ScoringMethod.BASELINE_SHARE,
+        score=100.0,
+    )
+    assert badge is Status.PASS
+
+
+def test_a_baseline_share_area_fails_with_none_of_it_present() -> None:
+    badge = area_status(
+        [_outcome("evidence_baseline", Status.FAIL)],
+        method=ScoringMethod.BASELINE_SHARE,
+        score=0.0,
+    )
+    assert badge is Status.FAIL
+
+
+def test_a_baseline_share_area_falls_back_to_its_checks_without_a_score() -> None:
+    """A review stored before the area carried one is badged the way it always was."""
+    badge = area_status(
+        [_outcome("evidence_baseline", Status.PARTIAL)], method=ScoringMethod.BASELINE_SHARE
+    )
+    assert badge is Status.PARTIAL

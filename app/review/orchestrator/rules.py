@@ -89,6 +89,16 @@ def outcome_for(
         Status.UNABLE_TO_VALIDATE,
         Status.MISSING_EVIDENCE,
     }
+    # Whether the status above is the figure's answer or a model's. It is the figure's when
+    # the entry type says this check is decided by figures and one of them was marked
+    # decisive - the same test ``answer_check`` applies before it takes the status away
+    # from a model. Scoring reads it so that a model which disagreed with a figure cannot
+    # halve the credit that figure earned: the disagreement is still a flag, and the check
+    # still goes to a person, but the number stays the figure's. Without this, "the figure
+    # wins" held for the status and quietly lost for the score.
+    settled_by_figures = check.decided_by is DecidedBy.FIGURES and any(
+        figure.decisive for figure in figures
+    )
     return CheckOutcome(
         check_id=check.id,
         area=check.area,
@@ -97,6 +107,7 @@ def outcome_for(
         review_reasons=tuple(dict.fromkeys(reasons)),
         verdict=verdict,
         challenge=challenge,
+        settled_by_figures=settled_by_figures,
     )
 
 

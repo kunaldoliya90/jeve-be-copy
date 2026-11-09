@@ -79,6 +79,7 @@ def check_answer(
     status = verdict.status
 
     # --- a figures-decided check takes its status from the figure, not the model ------
+    settled: Status | None = None
     if check.decided_by is DecidedBy.FIGURES:
         decisive = next((figure for figure in figures if figure.decisive), None)
         settled = _status_from_figure(decisive)
@@ -111,9 +112,28 @@ def check_answer(
     if challenge is None:
         flags.append(ReviewFlag.CHALLENGE_MISSING)
     elif not challenge.agrees and challenge.status_should_be is not None:
+        flags.append(ReviewFlag.CHALLENGE_DISAGREED)
         # The stricter of the two, always. A disagreement is a reason to look, not to pick.
         tightened = stricter(status, challenge.status_should_be)
-        if tightened is not status:
+        if tightened is status:
+            pass
+        elif settled is not None:
+            # Except where the figure already settled it. Twenty lines above, this function
+            # takes a figures-decided check away from the model and gives it to the figure;
+            # letting the second opinion put the model's answer back is that rule undone by
+            # the rule's own neighbour, and it is how a register showing three of four
+            # baseline layers present reported "no evidence" and scored the area zero.
+            #
+            # The disagreement is not discarded: the flag above is already on the check, so
+            # it goes to a person exactly as it did. A model may always ask for a second
+            # look at an answer code owns. It may not write one.
+            logger.info(
+                "check %s: the challenge would tighten %s to %s, but the figure settled it",
+                check.id,
+                status.value,
+                tightened.value,
+            )
+        else:
             logger.info(
                 "check %s tightened from %s to %s by the challenge",
                 check.id,
@@ -121,7 +141,6 @@ def check_answer(
                 tightened.value,
             )
             status = tightened
-        flags.append(ReviewFlag.CHALLENGE_DISAGREED)
 
     return AnswerProblems(status, list(dict.fromkeys(flags)))
 
@@ -137,10 +156,17 @@ def _status_from_figure(decisive: Figure | None) -> Status | None:
 
 
 def _quotable_numbers(figures: tuple[Figure, ...]) -> list[Decimal]:
-    """Everything a conclusion is allowed to say, including the counts tools measured."""
+    """Everything a conclusion is allowed to say, including the counts tools measured.
+
+    The exemplars count too. They are sent to the model in the judging payload, so a
+    conclusion that quotes one is quoting what it was shown - and a guardrail that calls
+    that untraced is not catching an invention, it is penalising a model for reading its
+    own evidence. It cost one period check half its credit on a live run.
+    """
     allowed: list[Decimal] = []
     for figure in figures:
         allowed.extend(figure.numbers)
+        allowed.extend(figure.sample_numbers)
         allowed.append(Decimal(figure.exception_count))
         if figure.financial_impact is not None:
             allowed.append(figure.financial_impact)

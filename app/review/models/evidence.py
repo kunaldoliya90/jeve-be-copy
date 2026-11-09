@@ -4,7 +4,7 @@ A ``Figure`` is the only way a number reaches a verdict. Every number a model is
 quote appears in ``numbers``, and ``answer_check`` rejects any other.
 """
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Any
 
@@ -99,6 +99,36 @@ class Figure(BaseModel):
     error: str | None = Field(
         default=None, description="Error class when the tool raised; it never raises upward"
     )
+
+    @property
+    def sample_numbers(self) -> tuple[Decimal, ...]:
+        """Every number the exemplars carry, as quotable as the ones in ``numbers``.
+
+        A sample is this tool's own output, and the judging payload shows it to the model.
+        A conclusion reading "period 07 on 428 lines" is therefore quoting evidence the
+        system handed it - and flagging that as a number traceable to nothing is the false
+        positive that teaches a reviewer to ignore the untraced list, and that costs the
+        check half its credit on the way past. ``numbers`` stays the list a tool curates as
+        the ones worth quoting; this is the rest of what it actually showed.
+
+        Not a ``computed_field``: it is derived on demand for the guardrails and has no
+        business being written into a stored record beside the samples it is read from.
+        """
+        found: list[Decimal] = []
+        for sample in self.samples:
+            for value in sample.values():
+                # Before the int branch: a bool is an int in Python, and "True" is not a
+                # number anybody quotes.
+                if isinstance(value, bool):
+                    continue
+                if isinstance(value, Decimal | int | float):
+                    found.append(Decimal(str(value)))
+                elif isinstance(value, str):
+                    try:
+                        found.append(Decimal(value.replace(",", "")))
+                    except InvalidOperation:
+                        continue  # a cell reference, a sheet name, a cause - not a number
+        return tuple(found)
 
     @computed_field  # type: ignore[prop-decorator]
     @property

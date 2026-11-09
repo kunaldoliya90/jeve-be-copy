@@ -16,7 +16,7 @@ from review.models.result import AreaScore, Score, ScoringMethod
 from review.models.verdicts import CheckOutcome, ReviewFlag, Status
 
 
-def _score(*, total: float = 62.5, provisional: bool = True) -> Score:
+def _score(*, total: float = 62.5, provisional: bool = True, baseline: float = 50.0) -> Score:
     return Score(
         total=total,
         band="needs work",
@@ -34,7 +34,7 @@ def _score(*, total: float = 62.5, provisional: bool = True) -> Score:
                 area="evidence_completeness",
                 weight=40,
                 method=ScoringMethod.BASELINE_SHARE,
-                score=50.0,
+                score=baseline,
                 reason="2 of 6 layers present",
             ),
         ),
@@ -63,11 +63,20 @@ def _outcomes() -> dict[str, CheckOutcome]:
 
 
 def test_headline_for_reports_the_score_and_what_is_unsettled() -> None:
+    """Counted over the parameters the report shows, in the words it shows them in.
+
+    This line is copied into mail and tickets, so a denominator a reader cannot find
+    anywhere on the report - "3 checks ran" - is a denominator they cannot check.
+    """
     headline = headline_for(_score(), _outcomes())
 
     assert "62.5 out of 100" in headline
     assert "(provisional)" in headline
-    assert "3 checks ran; 1 failed and 2 need a person." in headline
+    assert "2 parameters tested; 0 failed and 1 needs a person." in headline
+
+
+def test_the_headline_never_says_check() -> None:
+    assert "check" not in headline_for(_score(), _outcomes()).lower()
 
 
 def test_headline_for_omits_provisional_when_the_score_is_final() -> None:
@@ -77,17 +86,31 @@ def test_headline_for_omits_provisional_when_the_score_is_final() -> None:
 # ------------------------------------------------------------------------ plain_summary
 
 
-def test_plain_summary_names_the_area_that_did_not_pass() -> None:
+def test_plain_summary_names_the_parameter_that_did_not_pass() -> None:
+    """Named as the card names it, and said in one plain clause."""
     prose = plain_summary(_score(), _outcomes())
 
-    assert "Evidence completeness: 2 of 2 checks found exceptions that were not resolved." in prose
+    assert "Evidence Completeness: could not be fully confirmed." in prose
 
 
-def test_plain_summary_names_the_areas_that_passed() -> None:
-    assert "Calculation accuracy passed." in plain_summary(_score(), _outcomes())
+def test_plain_summary_never_says_check() -> None:
+    """The reader's unit is the parameter. A check is the engine's, and it is not theirs
+    to learn in order to read their own report."""
+    prose = plain_summary(_score(), _outcomes())
+
+    assert "check" not in prose.lower()
 
 
-def test_plain_summary_names_every_area_passed_when_nothing_failed() -> None:
+def test_plain_summary_carries_no_count_a_reader_cannot_find() -> None:
+    """ "2 of 2" was counting checks, and nothing on the report showed a reader those two."""
+    assert not re.search(r"\d+ of \d+", plain_summary(_score(), _outcomes()))
+
+
+def test_plain_summary_names_the_parameters_that_passed() -> None:
+    assert "Calculation Accuracy passed." in plain_summary(_score(), _outcomes())
+
+
+def test_plain_summary_names_every_parameter_passed_when_nothing_failed() -> None:
     outcomes = {
         "accrual_reperforms": CheckOutcome(
             check_id="accrual_reperforms", area="calculation_accuracy", final_status=Status.PASS
@@ -97,9 +120,9 @@ def test_plain_summary_names_every_area_passed_when_nothing_failed() -> None:
         ),
     }
 
-    prose = plain_summary(_score(), outcomes)
+    prose = plain_summary(_score(baseline=100.0), outcomes)
 
-    assert prose == "Calculation accuracy and Evidence completeness passed."
+    assert prose == "Calculation Accuracy and Evidence Completeness passed."
 
 
 def test_plain_summary_words_each_status_differently() -> None:
@@ -125,10 +148,12 @@ def test_plain_summary_words_each_status_differently() -> None:
         ),
     )
 
-    assert "found exceptions that were not resolved" in plain_summary(score, _area(Status.FAIL))
+    assert "exceptions were found and not resolved" in plain_summary(score, _area(Status.FAIL))
     assert "could not be fully confirmed" in plain_summary(score, _area(Status.PARTIAL))
-    assert "could not be validated" in plain_summary(score, _area(Status.UNABLE_TO_VALIDATE))
-    assert "required evidence was missing" in plain_summary(score, _area(Status.MISSING_EVIDENCE))
+    assert "could not be established" in plain_summary(score, _area(Status.UNABLE_TO_VALIDATE))
+    assert "the evidence this needs is missing" in plain_summary(
+        score, _area(Status.MISSING_EVIDENCE)
+    )
 
 
 def test_plain_summary_carries_no_cell_reference_citation_or_schema_name() -> None:

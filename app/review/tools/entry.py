@@ -249,7 +249,13 @@ class EvidenceRegisterTool(BaseTool):
                 # Some required layer missing is partial, by coverage, below - not a silent
                 # pass. None of them present at all is the one case nothing here can rescue.
                 ok=(required_present > 0) if required else not missing,
-                summary=_evidence_summary(len(found), len(self.SATISFIED_BY), missing),
+                summary=_evidence_summary(
+                    len(found),
+                    len(self.SATISFIED_BY),
+                    missing,
+                    present=required_present,
+                    required=len(required),
+                ),
                 exception_count=len(missing),
                 coverage=coverage,
                 # Every layer, not only the gaps, because the register renders from these
@@ -435,8 +441,31 @@ def _screenshot_mismatches(ctx: ToolContext, readings: list[PictureReading]) -> 
     return problems
 
 
-def _evidence_summary(found: int, expected: int, missing: list[dict[str, Any]]) -> str:
-    line = f"{found} of {expected} expected evidence layers are present in the workbook"
+def _evidence_summary(
+    found: int,
+    expected: int,
+    missing: list[dict[str, Any]],
+    *,
+    present: int,
+    required: int,
+) -> str:
+    """The register in one line, led by the figure the area is scored on.
+
+    The baseline share comes first because that is the number: three of four baseline layers
+    present scores the area 75, and a sentence opening "4 of 6 expected evidence layers are
+    present" is a true statement that accounts for no part of it. The count over every layer
+    still follows, because the register below lists all six and a reader comparing the two
+    should not have to count rows.
+
+    A type that declares no required evidence keeps the whole-register sentence: there is no
+    baseline to take a share of, and the register is all-or-nothing for that type anyway.
+    """
+    line = (
+        f"{present} of {required} baseline evidence layers are present in the workbook"
+        f" ({found} of {expected} expected layers in all)"
+        if required
+        else f"{found} of {expected} expected evidence layers are present in the workbook"
+    )
     if missing:
         line += "; missing: " + ", ".join(str(entry["item"]) for entry in missing)
     return line

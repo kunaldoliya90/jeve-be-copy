@@ -74,6 +74,24 @@ def test_one_required_layer_missing_is_partial_not_failed_outright() -> None:
     assert not figure.supports_pass, "partial, not a pass, with a required layer missing"
 
 
+def test_the_summary_leads_with_the_baseline_share_the_area_is_scored_on() -> None:
+    """The sentence the card is written from has to account for the number beside it."""
+    ctx = context(
+        {
+            "Methodology": SheetRole.METHODOLOGY,
+            "GPAY": SheetRole.CALCULATION,
+            "MSPeople": SheetRole.MASTER_DATA,
+        },
+        REQUIRED_EVIDENCE,
+    )
+
+    figure = EvidenceRegisterTool().run(ctx, "evidence_baseline")[0]
+
+    assert figure.summary.startswith("3 of 4 baseline evidence layers are present")
+    assert "(3 of 6 expected layers in all)" in figure.summary
+    assert "approval" in figure.summary
+
+
 def test_no_required_layer_present_fails_outright() -> None:
     ctx = context({}, REQUIRED_EVIDENCE)
 

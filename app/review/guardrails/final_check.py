@@ -101,6 +101,9 @@ def _traceable(
     for figures in evidence_pack.values():
         for figure in figures:
             allowed.extend(figure.numbers)
+            # The exemplars as well as the curated list: the report quotes what the tools
+            # showed, and a number out of a sample traces to the tool that produced it.
+            allowed.extend(figure.sample_numbers)
             allowed.append(Decimal(figure.exception_count))
             if figure.financial_impact is not None:
                 allowed.append(figure.financial_impact)

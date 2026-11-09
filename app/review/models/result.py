@@ -24,6 +24,14 @@ class ScoringMethod(StrEnum):
 
     WEAKEST_CHECK = "weakest_check"
     BASELINE_SHARE = "baseline_share"
+    """Scored on the share of the baseline evidence layers actually present.
+
+    Three of four required layers present is 75, not the half credit a partial check earns:
+    the area is a proportion of the support the entry needs, and one missing approval must
+    not score the same as three missing layers. Nothing present fails it, everything present
+    passes it, and the badge is read off the same share so a card's word and its number
+    cannot disagree.
+    """
     EXCEPTION_RATE = "exception_rate"
     """Scored on the share of rows excepted, not on the worst row."""
     IMPACT_SHARE = "impact_share"

@@ -51,7 +51,7 @@ from review.guardrails.final_check import final_check
 from review.guardrails.map_check import MapVerdict, map_check
 from review.guardrails.plan_check import CheckedPlan, plan_check
 from review.intake.gatekeeper import UploadOk, validate_upload
-from review.intake.reuse import file_digest, reuse_key
+from review.intake.reuse import file_digest, harness_version, reuse_key
 from review.models.context import BusinessRules, JETypeContext
 from review.models.evidence import (
     EvidenceItem,
@@ -500,7 +500,10 @@ class ReviewOrchestrator:
         versions = {
             "je_type": self._context.je_type_version(je_type) if je_type else "",
             "rules": self._context.rules_version,
-            "harness": _HARNESS_VERSION,
+            # The declared version and a hash of the harness's own source, so a change to
+            # the scoring, a tool or a guardrail retires every stored result that change
+            # would have answered differently.
+            "harness": harness_version(_HARNESS_VERSION),
         }
         key = reuse_key(file_sha256=digest, submitted_je_type=je_type, versions=versions)
         run.file_sha256 = digest
@@ -1022,6 +1025,7 @@ class ReviewOrchestrator:
             ),
             clusters,
             steps=_identification_steps(run, je_spec),
+            recalculation=run.recalculation,
         )
         await self._record_call(run, AICall.SUMMARY, written)
 
@@ -1838,7 +1842,7 @@ def _read_facts(data: WorkbookData) -> dict[str, object]:
 def _headline_for(run: ReviewRun) -> str:
     """The stored headline. Kept with the record so a re-read says what the run said."""
     if run.score is None:
-        return "No score: no check was run."
+        return "No score: nothing was tested."
     return (
         f"{run.score.total} out of 100, {run.score.band}"
         f"{' (provisional)' if run.score.provisional else ''}"
@@ -1857,7 +1861,7 @@ def _identification_notes(
         return ()
     ruled_out = "; ".join(recognised.rejected[:MAX_LISTED_REJECTIONS])
     return (
-        f"The workbook's shape matched no entry type, so these checks were run against "
+        f"The workbook's shape matched no entry type, so this entry was tested against "
         f"{je_spec.name} because that is what the upload declared. Nothing here confirms "
         f"the entry is of that type, and the review stays with a person for that reason."
         + (f" Ruled out by shape: {ruled_out}." if ruled_out else ""),
@@ -1888,7 +1892,9 @@ def _plan_notes(checked: "CheckedPlan") -> tuple[str, ...]:
     """
     if not checked.dropped:
         return ()
-    return tuple(f"{check_id} could not be checked: {why}." for check_id, why in checked.dropped)
+    # "could not be tested", never "could not be checked": these land in the executive
+    # summary, which is written for a reader who has never met the engine's unit of work.
+    return tuple(f"{check_id} could not be tested: {why}." for check_id, why in checked.dropped)
 
 
 def _cluster_notes(

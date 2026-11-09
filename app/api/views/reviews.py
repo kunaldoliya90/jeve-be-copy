@@ -478,6 +478,7 @@ def _areas(run: ReviewRun) -> list[AreaView]:
                 [outcome for outcome in run.context.outcomes.values() if outcome.area == area.area],
                 method=area.method,
                 recalculation=run.recalculation,
+                score=area.score,
             ),
             reason=plain_area_reason(area.area, area.reason, run.recalculation),
             checks=[
@@ -625,7 +626,7 @@ def _headline(run: ReviewRun) -> str:
             "No checks have been run, so nothing here is a pass."
         )
     outcomes = run.context.outcomes if run.context else {}
-    return headline_for(run.score, outcomes)
+    return headline_for(run.score, outcomes, run.recalculation)
 
 
 __all__ = [

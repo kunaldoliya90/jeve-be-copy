@@ -431,6 +431,7 @@ class ReviewDetail(BaseModel):
                         [outcome for outcome in result.checks if outcome.area == area.area],
                         method=area.method,
                         recalculation=result.recalculation,
+                        score=area.score,
                     ),
                     reason=plain_area_reason(area.area, area.reason, result.recalculation),
                     checks=[
@@ -487,6 +488,7 @@ def area_status(
     *,
     method: ScoringMethod | str | None = None,
     recalculation: EntryRecalculation | None = None,
+    score: float | None = None,
 ) -> Status:
     """An area is no better than its worst check - unless its checks are not what it is
     scored on.
@@ -510,6 +512,12 @@ def area_status(
 
     Where the work paper could not answer - ``within_tolerance`` is ``None``, so there was
     nothing to compare - the checks decide the badge, exactly as they decide the score.
+
+    An area scored ``baseline_share`` is the other exception, for the same reason: its
+    number is the share of the required evidence present, not its checks' credit. All of it
+    present passes, none of it present fails, and anything between the two is partial -
+    which is what a reviewer looking at three of four baseline layers should be told. Read
+    off the area's own score so the badge and the number are the one fact said twice.
     """
     if (
         method == ScoringMethod.ENTRY_TOLERANCE
@@ -517,6 +525,9 @@ def area_status(
         and recalculation.within_tolerance is not None
     ):
         return Status.PASS if recalculation.within_tolerance else Status.FAIL
+
+    if method == ScoringMethod.BASELINE_SHARE and score is not None:
+        return share_status(score)
 
     if not outcomes:
         return Status.UNABLE_TO_VALIDATE
@@ -526,7 +537,19 @@ def area_status(
     return worst
 
 
+def share_status(score: float) -> Status:
+    """A share, badged: 100 passes, 0 fails, anything between the two is partial."""
+    if score >= _FULL_SHARE:
+        return Status.PASS
+    if score <= 0:
+        return Status.FAIL
+    return Status.PARTIAL
+
+
 CALCULATION_AREA = "calculation_accuracy"
+
+#: A share is a percentage, so a full one is 100 - the same scale the areas are scored on.
+_FULL_SHARE = 100.0
 
 _WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
 

@@ -116,3 +116,11 @@ class CheckOutcome(BaseModel):
     review_reasons: tuple[ReviewFlag, ...] = Field(default=())
     verdict: Verdict | None = Field(default=None)
     challenge: Challenge | None = Field(default=None)
+    settled_by_figures: bool = Field(
+        default=False,
+        description=(
+            "The entry type declares this check decided by figures, and a figure decided "
+            "it. Scoring reads it: the waiting-for-a-person cap is for a check whose "
+            "answer a person still owes, not for one a model merely disagreed with"
+        ),
+    )

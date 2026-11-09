@@ -78,19 +78,58 @@ def _score_area(
         # context loader refuses this at startup, so reaching it means a plan went wrong.
         return 0.0
 
-    credits = [rules.credit_for(c.final_status, needs_review=c.needs_review) for c in checks]
+    # The waiting-for-a-person cap applies where a person's answer is what the check is
+    # waiting for. Where the figures settled it, the credit is theirs: a model may flag a
+    # figures-decided check for a second look - and it stays flagged, and the review stays
+    # provisional - but it may not halve a score it was not allowed to set in the first
+    # place. The same reasoning `entry_tolerance` already scores by: full marks, with the
+    # argument still on the card.
+    credits = [
+        rules.credit_for(
+            check.final_status,
+            needs_review=check.needs_review and not check.settled_by_figures,
+        )
+        for check in checks
+    ]
 
     match method:
         case ScoringMethod.WEAKEST_CHECK:
             return float(min(credits))
         case ScoringMethod.BASELINE_SHARE:
-            return sum(credits) / len(credits)
+            return _by_baseline_share(figures, fallback=sum(credits) / len(credits))
         case ScoringMethod.EXCEPTION_RATE:
             return _by_exception_rate(figures, fallback=min(credits))
         case ScoringMethod.IMPACT_SHARE:
             return _by_impact_share(figures, fallback=min(credits))
         case ScoringMethod.ENTRY_TOLERANCE:
             return _by_entry_tolerance(recalculation, rules, fallback=float(min(credits)))
+
+
+def _by_baseline_share(figures: tuple[Figure, ...], *, fallback: float) -> float:
+    """Scored on the share of the baseline evidence that is actually present.
+
+    The question this area is asked is how much of the required evidence the workbook
+    supplies, and the register answers exactly that, layer by layer: three of the four
+    baseline layers present is three quarters of the support the entry needs, so the area
+    scores 75. Averaging the area's check credits instead answered a different question -
+    "how badly did the one check that counts these layers come out" - and a single missing
+    approval and three missing ones both landed on the same partial credit, 50. Two
+    materially different entries cannot be allowed to score alike.
+
+    Recommended layers are excluded because the register's coverage already counts only the
+    required ones: a recommended layer is reported for the reviewer to judge and never
+    lowers a score.
+
+    Falls back to the check credits where no register coverage exists - an area scored this
+    way whose tool could not count layers, or a method applied to checks that carry none.
+    A missing count is never read as nothing present.
+    """
+    coverages = [figure.coverage for figure in figures if figure.coverage is not None]
+    expected = sum(coverage.rows_total for coverage in coverages)
+    if not coverages or expected == 0:
+        return fallback
+    present = sum(coverage.rows_tied for coverage in coverages)
+    return _FULL * min(1.0, present / expected)
 
 
 def _by_exception_rate(figures: tuple[Figure, ...], *, fallback: float) -> float:

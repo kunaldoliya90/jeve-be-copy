@@ -22,7 +22,8 @@ from review.agents.judging import call_model
 from review.context.prompts import PromptRegistry
 from review.models.context import JETypeContext
 from review.models.evidence import ExceptionCluster, Figure
-from review.models.result import ReportPayload, Score
+from review.models.recalculation import EntryRecalculation
+from review.models.result import ReportPayload, Score, ScoringMethod
 from review.models.verdicts import CheckOutcome, Status, stricter
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,9 @@ rather than something short, and the fallback steps would stand in for no good r
 
 TOP_FINDINGS: Final = 8
 MAX_LISTED: Final = 6
+
+_FULL_SHARE: Final = 100.0
+"""A whole share, on the scale the parameters are scored on."""
 
 SUMMARY_SCHEMA: Final[dict[str, Any]] = {
     "type": "object",
@@ -49,22 +53,37 @@ SUMMARY_SCHEMA: Final[dict[str, Any]] = {
 }
 
 AREA_LABELS: Final[dict[str, str]] = {
-    "evidence_completeness": "Evidence completeness",
-    "evidence_appropriateness": "Evidence appropriateness",
-    "calculation_accuracy": "Calculation accuracy",
-    "pii": "PII review",
-    "trend": "Trend analysis",
-    "period": "Period validation",
+    "evidence_completeness": "Evidence Completeness",
+    "evidence_appropriateness": "Evidence Appropriateness",
+    "calculation_accuracy": "Calculation Accuracy",
+    "pii": "PII Assessment",
+    "trend": "Trend Analysis",
+    "period": "Period",
 }
-"""Plain names for the six-parameter model's areas. An area from an older context version
-falls back to its key, titled — those are read-only history, and never worth a line here."""
+"""The six parameters, named exactly as the report's own parameter cards name them.
+
+Word for word, deliberately. The summary and the cards are read one after the other by the
+same person, and a paragraph calling something "PII review" above a card headed "PII
+Assessment" makes a reader stop and work out whether those are the same thing. An area from
+an older context version falls back to its key, titled — those are read-only history, and
+never worth a line here."""
 
 _STATUS_WORDING: Final[dict[Status, str]] = {
-    Status.FAIL: "found exceptions that were not resolved",
+    Status.FAIL: "exceptions were found and not resolved",
     Status.PARTIAL: "could not be fully confirmed",
-    Status.MISSING_EVIDENCE: "could not be assessed because required evidence was missing",
-    Status.UNABLE_TO_VALIDATE: "could not be validated",
+    Status.MISSING_EVIDENCE: "the evidence this needs is missing",
+    Status.UNABLE_TO_VALIDATE: "could not be established either way",
 }
+"""How each outcome reads in a sentence a business reader finishes in one pass.
+
+No counts and no "checks". A check is the engine's unit of work, not the reader's: the
+report is laid out as six parameters, the reader argues about parameters, and "1 of 5
+checks found exceptions" asks them to hold a denominator that appears nowhere else on the
+page. What each parameter came to is the finding; the detail sits on its own card.
+
+Each phrase is also written to carry a word the report's own reader marks as a problem
+("missing", "could not", "exceptions"). That marking can only over-mark, never under-mark,
+so a phrase worded around those words would quietly read as though nothing were wrong."""
 
 
 async def summarise(
@@ -77,6 +96,7 @@ async def summarise(
     notes: tuple[str, ...] = (),
     clusters: dict[str, tuple[ExceptionCluster, ...]] | None = None,
     steps: tuple[str, ...] = (),
+    recalculation: EntryRecalculation | None = None,
 ) -> tuple[ReportPayload, LLMResponse | None]:
     """The written report: the executive summary is always code's, the next steps are the
     model's where one answered.
@@ -90,8 +110,8 @@ async def summarise(
     next steps: an instruction that follows from how the review ran rather than from what it
     found, which a model reading only the outcomes has no way to know it must give.
     """
-    headline = headline_for(score, outcomes)
-    summary = _with_notes(plain_summary(score, outcomes), notes)
+    headline = headline_for(score, outcomes, recalculation)
+    summary = _with_notes(plain_summary(score, outcomes, recalculation), notes)
     fallback_steps = (*steps, *_fallback_next_steps(outcomes))[:MAX_LISTED]
     fallback = ReportPayload(headline=headline, summary=summary, next_steps=fallback_steps)
     if provider is None:
@@ -123,14 +143,38 @@ async def summarise(
     )
 
 
-def headline_for(score: Score, outcomes: dict[str, CheckOutcome]) -> str:
-    """What a reader sees first: the score, and what is still unsettled beneath it."""
-    failed = sum(1 for outcome in outcomes.values() if outcome.final_status is Status.FAIL)
-    waiting = sum(1 for outcome in outcomes.values() if outcome.needs_review)
+def headline_for(
+    score: Score,
+    outcomes: dict[str, CheckOutcome],
+    recalculation: EntryRecalculation | None = None,
+) -> str:
+    """What a reader sees first: the score, and what is still unsettled beneath it.
+
+    Counted over the parameters rather than over the checks beneath them, in the words the
+    report uses everywhere else. This line is copied out of the report into mail and
+    tickets, so it has to stand on its own in front of a reader who has never seen the
+    engine - and "18 checks ran" is a denominator that appears nowhere they can look.
+    """
+    failed = 0
+    waiting = 0
+    for area in score.areas:
+        checks = [outcome for outcome in outcomes.values() if outcome.area == area.area]
+        if not checks:
+            continue
+        badge = _area_status(
+            checks, method=area.method, score=area.score, recalculation=recalculation
+        )
+        if badge is Status.FAIL:
+            failed += 1
+        if any(outcome.needs_review for outcome in checks):
+            waiting += 1
+
+    tested = f"{len(score.areas)} parameter{'' if len(score.areas) == 1 else 's'} tested"
+    needs = "needs" if waiting == 1 else "need"
     return (
         f"{score.total} out of 100, {score.band}"
         f"{' (provisional)' if score.provisional else ''}. "
-        f"{len(outcomes)} checks ran; {failed} failed and {waiting} need a person."
+        f"{tested}; {failed} failed and {waiting} {needs} a person."
     )
 
 
@@ -140,23 +184,51 @@ def template(
     headline: str,
     notes: tuple[str, ...] = (),
     steps: tuple[str, ...] = (),
+    recalculation: EntryRecalculation | None = None,
 ) -> ReportPayload:
     """The report for when no model answers. The same summary a model-written one gets,
     since neither composes the executive summary from a tool's own output."""
     return ReportPayload(
         headline=headline,
-        summary=_with_notes(plain_summary(score, outcomes), notes),
+        summary=_with_notes(plain_summary(score, outcomes, recalculation), notes),
         next_steps=(*steps, *_fallback_next_steps(outcomes))[:MAX_LISTED],
     )
 
 
-def _area_status(checks: list[CheckOutcome]) -> Status:
-    """An area is no better than its worst check.
+def _area_status(
+    checks: list[CheckOutcome],
+    *,
+    method: ScoringMethod | None = None,
+    score: float | None = None,
+    recalculation: EntryRecalculation | None = None,
+) -> Status:
+    """A parameter is no better than its worst check - unless its checks are not what it is
+    scored on.
 
     Mirrors ``api.pydanticmodels.review_models.area_status`` exactly, kept as its own copy
     rather than imported: the API layer already depends on this package, and a dependency
-    back the other way would be a layering mistake, not a shortcut.
+    back the other way would be a layering mistake, not a shortcut. The two must agree,
+    because they are read side by side - this one writes the sentence in the summary and
+    that one badges the card the sentence is about, and a paragraph reporting exceptions
+    above a card badged Pass is a report arguing with itself.
+
+    So the same two exceptions apply here. An entry-tolerance parameter is badged on whether
+    the entry rebuilt to what was posted, and a baseline-share one on how much of the
+    required evidence is present - in both cases the number does not come from the checks,
+    so neither does the word.
     """
+    if (
+        method is ScoringMethod.ENTRY_TOLERANCE
+        and recalculation is not None
+        and recalculation.within_tolerance is not None
+    ):
+        return Status.PASS if recalculation.within_tolerance else Status.FAIL
+
+    if method is ScoringMethod.BASELINE_SHARE and score is not None:
+        if score >= _FULL_SHARE:
+            return Status.PASS
+        return Status.FAIL if score <= 0 else Status.PARTIAL
+
     worst = checks[0].final_status
     for check in checks[1:]:
         worst = stricter(worst, check.final_status)
@@ -170,15 +242,28 @@ def _joined(items: list[str]) -> str:
     return f"{', '.join(items[:-1])} and {items[-1]}"
 
 
-def plain_summary(score: Score, outcomes: dict[str, CheckOutcome]) -> str:
-    """The executive summary, in plain English: one line naming each area that did not
-    fully pass, then one line naming the ones that did.
+def plain_summary(
+    score: Score,
+    outcomes: dict[str, CheckOutcome],
+    recalculation: EntryRecalculation | None = None,
+) -> str:
+    """The executive summary, in plain English: one line naming each parameter that did not
+    fully pass, then one naming the ones that did.
 
-    Built from the score alone — an area's label and how many of its checks cleared — and
+    It says the same things, about the same six parameters, in the same words the cards
+    below it use — because it is read as the opening of that section rather than as a
+    separate account of the same review. What it does not say is how the engine arrived
+    there: no check counts, no check ids, nothing a reader would have to learn the shape of
+    the engine to follow.
+
+    Built from the score alone — each parameter's name and the outcome it reached — and
     never from a check's conclusion or a tool's figure. That is what makes it safe: there is
     no cell reference, figure citation or schema name anywhere in this function for a line to
     accidentally carry forward. Every one of those stays exactly where it belongs, in the
     sections below, next to the finding it explains.
+
+    ``recalculation`` is read only to badge the parameter scored on it, exactly as the card
+    is badged. Optional, so a caller without one still writes every other line identically.
     """
     sentences: list[str] = []
     passed: list[str] = []
@@ -189,16 +274,14 @@ def plain_summary(score: Score, outcomes: dict[str, CheckOutcome]) -> str:
         if not checks:
             continue
 
-        status = _area_status(checks)
+        status = _area_status(
+            checks, method=area.method, score=area.score, recalculation=recalculation
+        )
         if status is Status.PASS:
             passed.append(label)
             continue
 
-        unresolved = sum(1 for outcome in checks if outcome.final_status is not Status.PASS)
-        noun = "check" if len(checks) == 1 else "checks"
-        sentences.append(
-            f"{label}: {unresolved} of {len(checks)} {noun} {_STATUS_WORDING[status]}."
-        )
+        sentences.append(f"{label}: {_STATUS_WORDING[status]}.")
 
     if passed:
         sentences.append(f"{_joined(passed)} passed.")
